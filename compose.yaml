@@ -1,0 +1,16 @@
+services:
+  home-cinema-bridge:
+    build: .
+    container_name: home-cinema-bridge
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      TZ: Europe/Madrid
+      PYTHONUNBUFFERED: "1"
+      XNOPPO_CONFIG_FILE: /config/config.json
+    volumes:
+      - home-cinema-bridge-config:/config
+
+volumes:
+  home-cinema-bridge-config:
+    name: home-cinema-bridge-config

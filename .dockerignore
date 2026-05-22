@@ -1,0 +1,10 @@
+config.json
+.env
+.venv
+.git
+.idea
+__pycache__
+*.pyc
+*.log
+logs
+.DS_Store

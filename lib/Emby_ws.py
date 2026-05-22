@@ -73,14 +73,14 @@ class xnoppo_ws(threading.Thread):
         # --- FIN BLOQUE ROBUSTO ---
 
         playto_file(self.EmbySession, data, scripterx)
-        self.recargar_config()
+        self.reload_config()
         print("Thread Play: finishing")
     
     def set_lang(self,lang):
         self.ws_lang=lang
         self.EmbySession.lang=lang
 
-    def recargar_config(self):
+    def reload_config(self):
         if self.ws_config["DebugLevel"]>0: print('Recargando Configuracion')
         with open(self.config_file, 'r') as f:    
                 config = json.load(f)

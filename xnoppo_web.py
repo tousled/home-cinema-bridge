@@ -1,18 +1,10 @@
-import http.server
-import socketserver
 from http.server import BaseHTTPRequestHandler, HTTPServer
-import time
-import json
-import io
-import urllib
+from lib.config_manager import ensure_config_exists, is_configured
 import requests
 from lib.Emby_ws import xnoppo_ws
-from lib.Emby_http import *
 from lib.Xnoppo import *
 from lib.Xnoppo_TV import *
-import lib.Xnoppo_AVR
 import shutil
-import asyncio
 import threading
 import logging
 import logging.handlers
@@ -122,7 +114,7 @@ def get_state():
         print(status)
         return(status)
 
-def cargar_config(config_file,tv_path,av_path,lang_path):
+def load_config(config_file,tv_path,av_path,lang_path):
 
         with open(config_file, 'r') as f:    
                 config = json.load(f)
@@ -591,14 +583,14 @@ class MyServer(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-type", "application/json")
             self.end_headers()
-            a = cargar_config(cwd + separador + 'config.json',tv_path,av_path,lang_path)
+            a = load_config(config_file, tv_path, av_path, lang_path)
             self.wfile.write(bytes(json.dumps(a),"utf-8"))  
             return(0)
         if self.path == '/xnoppo_config_lib':
             self.send_response(200)
             self.send_header("Content-type", "application/json")
             self.end_headers()
-            a = cargar_config(cwd + separador + 'config.json',tv_path,av_path,lang_path)
+            a = load_config(config_file, tv_path, av_path, lang_path)
             carga_libraries(a)
             self.wfile.write(bytes(json.dumps(a),"utf-8"))
             return(0)
@@ -606,7 +598,7 @@ class MyServer(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-type", "application/json")
             self.end_headers()
-            a = cargar_config(cwd + separador + 'config.json',tv_path,av_path,lang_path)
+            a = load_config(config_file, tv_path, av_path, lang_path)
             get_devices(a)
             self.wfile.write(bytes(json.dumps(a),"utf-8"))
             return(0)
@@ -614,7 +606,7 @@ class MyServer(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-type", "application/json")
             self.end_headers()
-            config = cargar_config(cwd + separador + 'config.json',tv_path,av_path,lang_path)
+            config = load_config(config_file, tv_path, av_path, lang_path)
             a = check_version(config)
             self.wfile.write(bytes(json.dumps(a),"utf-8"))
             return(0)
@@ -622,7 +614,7 @@ class MyServer(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-type", "application/json")
             self.end_headers()
-            config = cargar_config(cwd + separador + 'config.json',tv_path,av_path,lang_path)
+            config = load_config(config_file, tv_path, av_path, lang_path)
             a = update_version(config,vers_path,cwd)
             restart()
             self.wfile.write(bytes(json.dumps(a),"utf-8"))
@@ -645,7 +637,7 @@ class MyServer(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-type", "application/json")
             self.end_headers()
-            a = cargar_config(cwd + separador + 'config.json',tv_path,av_path,lang_path)
+            a = load_config(config_file, tv_path, av_path, lang_path)
             get_selectableFolders(a)
             self.wfile.write(bytes(json.dumps(a),"utf-8"))
             return(0)
@@ -653,7 +645,7 @@ class MyServer(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-type", "application/json")
             self.end_headers()
-            config = cargar_config(cwd + separador + 'config.json',tv_path,av_path,lang_path)
+            config = load_config(config_file, tv_path, av_path, lang_path)
             a = cargar_lang(lang_path + config["language"] + separador +'lang.js')
             self.wfile.write(bytes(json.dumps(a),"utf-8"))  
             return(0)
@@ -663,7 +655,7 @@ class MyServer(BaseHTTPRequestHandler):
             a = len('/send_key?sendkey=')
             b=get_data[a:len(get_data)]
             print(b)
-            config = cargar_config(cwd + separador + 'config.json',tv_path,av_path,lang_path)
+            config = load_config(config_file, tv_path, av_path, lang_path)
             sendnotifyremote(config["Oppo_IP"])
             result=check_socket(config)
             if b=='PON':
@@ -693,7 +685,7 @@ class MyServer(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-type", "text")
             self.end_headers()
-            config = cargar_config(cwd + separador + 'config.json',tv_path,av_path,lang_path)
+            config = load_config(config_file, tv_path, av_path, lang_path)
             a = leer_img(cwd + separador + 'emby_xnoppo_client_logging.log')
             self.wfile.write(bytes(a))  
             return(0)
@@ -726,7 +718,7 @@ class MyServer(BaseHTTPRequestHandler):
                 content_length = int(self.headers['Content-Length']) # <--- Gets the size of data
                 post_data = self.rfile.read(content_length) # <--- Gets the data itself
                 config = json.loads(post_data.decode('utf-8'))
-                save_config(cwd + separador + 'config.json',config)
+                save_config(config_file, config)
                 self.send_response(200)
                 self.send_header("Content-Length", len(config))
                 self.send_header("Content-Type", "text/html")
@@ -749,7 +741,7 @@ class MyServer(BaseHTTPRequestHandler):
                     self.wfile.write(bytes(json.dumps(config),"utf-8"))
                     status = get_state()
                     if status["Playstate"]=="Not_Connected":
-                        save_config(cwd + separador + 'config.json',config)
+                        save_config(config_file, config)
                         emby_wsocket.ws_config=config
                         restart()
                 else:
@@ -787,7 +779,7 @@ class MyServer(BaseHTTPRequestHandler):
                 content_length = int(self.headers['Content-Length']) # <--- Gets the size of data
                 post_data = self.rfile.read(content_length) # <--- Gets the data itself
                 server = json.loads(post_data.decode('utf-8'))
-                config = cargar_config(cwd + separador + 'config.json',tv_path,av_path,lang_path)
+                config = load_config(config_file, tv_path, av_path, lang_path)
                 a = test_path(config,server)
                 if a == 'OK':
                     self.send_response(200)
@@ -811,7 +803,7 @@ class MyServer(BaseHTTPRequestHandler):
                 post_data = self.rfile.read(content_length) # <--- Gets the data itself
                 path_obj = json.loads(post_data.decode('utf-8'))
                 path = path_obj["path"]
-                config = cargar_config(cwd + separador + 'config.json',tv_path,av_path,lang_path)
+                config = load_config(config_file, tv_path, av_path, lang_path)
                 a = navigate_folder(path,config)
                 a_json=json.dumps(a)
                 print(len(a_json))
@@ -828,7 +820,7 @@ class MyServer(BaseHTTPRequestHandler):
                 content_length = int(self.headers['Content-Length']) # <--- Gets the size of data
                 post_data = self.rfile.read(content_length) # <--- Gets the data itself
                 config = json.loads(post_data.decode('utf-8'))
-                save_config(cwd + separador + 'config.json',config)
+                save_config(config_file, config)
                 move_files(tv_path + config["TV_model"],lib_path)
                 self.send_response(200)
                 self.send_header("Content-Length", len(config))
@@ -843,7 +835,7 @@ class MyServer(BaseHTTPRequestHandler):
                 content_length = int(self.headers['Content-Length']) # <--- Gets the size of data
                 post_data = self.rfile.read(content_length) # <--- Gets the data itself
                 config = json.loads(post_data.decode('utf-8'))
-                save_config(cwd + separador + 'config.json',config)
+                save_config(config_file, config)
                 move_files(av_path + config["AV_model"],lib_path)
                 self.send_response(200)
                 self.send_header("Content-Length", len(config))
@@ -860,7 +852,7 @@ class MyServer(BaseHTTPRequestHandler):
                 config = json.loads(post_data.decode('utf-8'))       
                 a = get_tv_key(config)
                 if a == 'OK':
-                    save_config(cwd + separador + 'config.json',config)
+                    save_config(config_file, config)
                     self.send_response(200)
                     self.send_header("Content-Length", len(config))
                     self.send_header("Content-Type", "text/html")
@@ -905,7 +897,7 @@ class MyServer(BaseHTTPRequestHandler):
                 config = json.loads(post_data.decode('utf-8'))       
                 a = get_tv_sources(config)
                 if a == 'OK':
-                    save_config(cwd + separador + 'config.json',config)
+                    save_config(config_file, config)
                     self.send_response(200)
                     self.send_header("Content-Length", len(config))
                     self.send_header("Content-Type", "text/html")
@@ -929,7 +921,7 @@ class MyServer(BaseHTTPRequestHandler):
                 a = get_hdmi_list(config)
                 if a != None:
                     config["AV_SOURCES"]=a
-                    save_config(cwd + separador + 'config.json',config)
+                    save_config(config_file, config)
                     self.send_response(200)
                     self.send_header("Content-Length", len(config))
                     self.send_header("Content-Type", "text/html")
@@ -1088,7 +1080,7 @@ if __name__ == "__main__":
               separador="\\"
     else:
               separador="/"
-    config_file = cwd + separador + "config.json"
+    config_file = str(ensure_config_exists())
     resource_path=cwd + separador + 'web' + separador + 'resources' + separador
     html_path = cwd + separador + 'web' + separador
     tv_path = cwd + separador + 'web' + separador + 'libraries' + separador + 'TV' + separador
@@ -1096,7 +1088,7 @@ if __name__ == "__main__":
     lib_path = cwd + separador + 'lib' + separador
     lang_path = cwd + separador + 'web' + separador + 'lang' + separador
     vers_path = cwd + separador + 'versions' + separador
-    config = cargar_config(config_file,tv_path,av_path,lang_path)
+    config = load_config(config_file,tv_path,av_path,lang_path)
     logfile=cwd + separador + "emby_xnoppo_client_logging.log"
     lang = cargar_lang(lang_path + config["language"] + separador +'lang.js')
 
@@ -1122,18 +1114,30 @@ if __name__ == "__main__":
                 delay=0
        )
        logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s',datefmt='%d/%m/%Y %I:%M:%S %p',level=logging.DEBUG,handlers=[rfh])
-    emby_wsocket = xnoppo_ws()
-    emby_wsocket.ws_config=config
-    emby_wsocket.config_file=config_file
-    emby_wsocket.ws_lang=lang
-    x = threading.Thread(target=thread_function, args=(emby_wsocket,))
-    x.daemon = True
-    x.start()
 
-    # Arrancamos el Perro Guardián para evitar estados congelados
-    w = threading.Thread(target=watchdog_function, args=(emby_wsocket, config))
-    w.daemon = True
-    w.start()
+    config_file = str(ensure_config_exists())
+    config = load_config(config_file, tv_path, av_path, lang_path)
+    config_ready = is_configured(config)
+    emby_wsocket = None
+
+    if config_ready:
+        emby_wsocket = xnoppo_ws()
+        emby_wsocket.ws_config=config
+        emby_wsocket.config_file=config_file
+        emby_wsocket.ws_lang=lang
+        x = threading.Thread(target=thread_function, args=(emby_wsocket,))
+        x.daemon = True
+        x.start()
+    else:
+        print("Config is not complete yet. Web UI is available; Emby websocket will not start.")
+
+    if config_ready:
+        # Arrancamos el Perro Guardián para evitar estados congelados
+        w = threading.Thread(target=watchdog_function, args=(emby_wsocket, config))
+        w.daemon = True
+        w.start()
+    else:
+        print("Watchdog will not start until configuration is complete.")
 
     espera=0
     estado_anterior=''
