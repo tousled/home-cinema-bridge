@@ -9,6 +9,7 @@ import threading
 import logging
 import logging.handlers
 import psutil
+import sys
 
 def get_version():
     return("2.03")
