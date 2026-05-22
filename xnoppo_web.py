@@ -1,7 +1,7 @@
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from lib.config_manager import ensure_config_exists, is_configured
 import requests
-from lib.Emby_ws import xnoppo_ws
+from lib.Emby_ws import XnoppoWs
 from lib.Xnoppo import *
 from lib.Xnoppo_TV import *
 import shutil
@@ -1121,7 +1121,7 @@ if __name__ == "__main__":
     emby_wsocket = None
 
     if config_ready:
-        emby_wsocket = xnoppo_ws()
+        emby_wsocket = XnoppoWs()
         emby_wsocket.ws_config=config
         emby_wsocket.config_file=config_file
         emby_wsocket.ws_lang=lang
