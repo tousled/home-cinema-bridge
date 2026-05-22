@@ -1,123 +1,85 @@
 #!/usr/bin/env python3
 import argparse
-import socket
+import sys
 import time
 from datetime import datetime
+from pathlib import Path
 
 
-def normalize_command(command: str) -> bytes:
-    command = command.strip().upper()
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
 
-    if not command.startswith("#"):
-        command = f"#{command}"
-
-    if not command.endswith("\r"):
-        command = f"{command}\r"
-
-    return command.encode("ascii")
+from lib.oppo_status_client import OppoStatusClient
 
 
-def parse_status(raw_response: str) -> str:
-    response = raw_response.strip()
-
-    if response.startswith("@OK"):
-        response = response[3:].strip()
-
-    if not response:
-        return "UNKNOWN"
-
-    return response.upper().replace(" ", "_")
+def now() -> str:
+    return datetime.now().strftime("%H:%M:%S.%f")[:-3]
 
 
-def query_oppo(host: str, port: int, command: str, timeout: float) -> tuple[str, str]:
-    payload = normalize_command(command)
-
-    with socket.create_connection((host, port), timeout=timeout) as sock:
-        sock.settimeout(timeout)
-        sock.sendall(payload)
-
-        chunks: list[bytes] = []
-        started = time.monotonic()
-
-        while time.monotonic() - started < timeout:
-            try:
-                chunk = sock.recv(1024)
-            except socket.timeout:
-                break
-
-            if not chunk:
-                break
-
-            chunks.append(chunk)
-
-            # Typical OPPO responses are short, but allow tiny fragmented responses.
-            time.sleep(0.05)
-
-            try:
-                more = sock.recv(1024)
-                if more:
-                    chunks.append(more)
-            except socket.timeout:
-                break
-
-            break
-
-    raw_response = b"".join(chunks).decode("utf-8", errors="replace").strip()
-    return raw_response, parse_status(raw_response)
-
-
-def print_sample(command: str, raw_response: str, status: str, previous_status: str | None) -> str:
-    now = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+def print_result(result, previous_status: str | None) -> str:
     changed = ""
 
-    if previous_status is not None and status != previous_status:
-        changed = f"  <<< CHANGED {previous_status} -> {status}"
+    if previous_status is not None and result.status != previous_status:
+        changed = f"  <<< CHANGED {previous_status} -> {result.status}"
 
-    print(f"{now} {command}: raw={raw_response!r} status={status}{changed}", flush=True)
-    return status
+    print(
+        f"{now()} {result.command}: "
+        f"raw={result.raw_response!r} "
+        f"status={result.status} "
+        f"category={result.category.value} "
+        f"ok={result.ok}"
+        f"{changed}",
+        flush=True,
+    )
+
+    return result.status
 
 
-def run_once(host: str, port: int, timeout: float, commands: list[str]) -> int:
+def run_once(client: OppoStatusClient, commands: list[str]) -> int:
     for command in commands:
         try:
-            raw_response, status = query_oppo(host, port, command, timeout)
-            print_sample(command.upper().lstrip("#"), raw_response, status, None)
+            result = client.query(command)
+            print_result(result, None)
         except Exception as exc:
-            now = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-            print(f"{now} {command}: ERROR {type(exc).__name__}: {exc}", flush=True)
+            print(f"{now()} {command}: ERROR {type(exc).__name__}: {exc}", flush=True)
 
     return 0
 
 
-def run_watch(host: str, port: int, timeout: float, interval: float, command: str, changes_only: bool) -> int:
+def run_watch(
+    client: OppoStatusClient,
+    command: str,
+    interval: float,
+    changes_only: bool,
+) -> int:
     previous_status: str | None = None
+    normalized_command = command.upper().lstrip("#")
 
     print(
-        f"Watching OPPO {host}:{port} command={command.upper().lstrip('#')} "
-        f"interval={interval}s changes_only={changes_only}. Press Ctrl+C to stop.",
+        f"Watching OPPO {client.host}:{client.port} "
+        f"command={normalized_command} interval={interval}s "
+        f"changes_only={changes_only}. Press Ctrl+C to stop.",
         flush=True,
     )
 
     try:
         while True:
-            try:
-                raw_response, status = query_oppo(host, port, command, timeout)
+            started = time.monotonic()
 
-                if not changes_only or previous_status is None or status != previous_status:
-                    previous_status = print_sample(
-                        command.upper().lstrip("#"),
-                        raw_response,
-                        status,
-                        previous_status,
-                    )
+            try:
+                result = client.query(command)
+
+                if not changes_only or previous_status is None or result.status != previous_status:
+                    previous_status = print_result(result, previous_status)
                 else:
-                    previous_status = status
+                    previous_status = result.status
 
             except Exception as exc:
-                now = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-                print(f"{now} {command}: ERROR {type(exc).__name__}: {exc}", flush=True)
+                print(f"{now()} {normalized_command}: ERROR {type(exc).__name__}: {exc}", flush=True)
 
-            time.sleep(interval)
+            elapsed = time.monotonic() - started
+            sleep_time = max(0.0, interval - elapsed)
+            time.sleep(sleep_time)
 
     except KeyboardInterrupt:
         print("\nStopped.", flush=True)
@@ -145,18 +107,17 @@ def main() -> int:
     )
 
     args = parser.parse_args()
+    client = OppoStatusClient(host=args.host, port=args.port, timeout=args.timeout)
 
     if args.watch:
         return run_watch(
-            host=args.host,
-            port=args.port,
-            timeout=args.timeout,
-            interval=args.interval,
+            client=client,
             command=args.watch_command,
+            interval=args.interval,
             changes_only=args.changes_only,
         )
 
-    return run_once(args.host, args.port, args.timeout, args.commands)
+    return run_once(client, args.commands)
 
 
 if __name__ == "__main__":
