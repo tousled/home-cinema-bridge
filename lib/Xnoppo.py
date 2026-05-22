@@ -165,7 +165,6 @@ def mountSharedFolder(server,folder,Username,Password,config,checksmb=True):
         error = '{"success":false,"retInfo":"Timeout in Mount Request"}'
         return error   
     if config["DebugLevel"]==2:
-        print(url)
         print(response.text)
         print("*** Fin mountSharedFolder ***")
     logging.debug("*** Mount Response: %s",response.text)
@@ -189,7 +188,6 @@ def mountSharedNFSFolder(server,folder,Username,Password,config):
         error = '{"success":false,"retInfo":"Timeout in Mount Request"}'
         return error
     if config["DebugLevel"]==2:
-        print(url)
         print(response.text)
         print("*** Fin mountSharedFolder ***")
     if response.text=='{}':

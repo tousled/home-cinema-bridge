@@ -133,7 +133,6 @@ def tv_test(config):
         store = {}
     else :
         store = {'client_key': config["TV_KEY"] }
-    #print(store)
     client = WebOSClient(config["TV_IP"])
     try:
        client.connect()
@@ -161,7 +160,8 @@ def tv_test(config):
     return("OK")
 
 def tv_change_hdmi(config):
-    print(config["TV_KEY"])
+    if config.get("DebugLevel", 0) > 0:
+        print("TV:client key loaded")
     if config["TV_KEY"]=='':
         store = {}
     else :
@@ -198,7 +198,8 @@ def tv_change_hdmi(config):
     return("OK")
 
 def tv_set_prev(config):
-    print(config["TV_KEY"])
+    if config.get("DebugLevel", 0) > 0:
+        print("TV:client key loaded")
     if config["TV_KEY"]=='':
         store = {}
     else :

@@ -81,7 +81,16 @@ class EmbyHttp(threading.Thread):
         params["DeviceName"] = data.get("DeviceName", "")
         params["Device_Id"] = data.get("Device_Id", "")
 
-        if self.config["DebugLevel"]>0:  print(params)
+        if self.config.get("DebugLevel", 0) > 0:
+            print(
+                "EmbyHttp:playback params | "
+                f"item_id={params.get('item_id')} | "
+                f"auto_resume={params.get('auto_resume')} | "
+                f"media_source_id={params.get('media_source_id')} | "
+                f"audio={params.get('audio_stream_index')} | "
+                f"subtitle={params.get('subtitle_stream_index')} | "
+                f"device={params.get('DeviceName')}"
+            )
         return(params)
 
     def playnow(self,data):
@@ -183,7 +192,6 @@ class EmbyHttp(threading.Thread):
     def playback_stop(self,session_id):
 
         url = self.config.get("emby_server") + '/emby/Sessions/' + str(session_id) + "/Playing/Stop?format=json"
-        print(url)
         message_data = {}
         message_data["Command"] = 'Stop'
         message_data["SeekPositionTicks"] = 0

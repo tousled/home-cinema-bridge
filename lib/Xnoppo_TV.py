@@ -133,7 +133,6 @@ def tv_test(config):
         store = {}
     else :
         store = {'client_key': config["TV_KEY"] }
-    #print(store)
     client = WebOSClient(config["TV_IP"])
     try:
        client.connect()
@@ -161,12 +160,12 @@ def tv_test(config):
     return("OK")
 
 def tv_change_hdmi(config):
-    print(config["TV_KEY"])
     if config["TV_KEY"]=='':
         store = {}
     else :
         store = {'client_key': config["TV_KEY"] }
-    print(store)
+    if config.get("DebugLevel", 0) > 0:
+        print("TV:client key loaded")
     client = WebOSClient(config["TV_IP"])
     try:
        client.connect()
@@ -180,9 +179,8 @@ def tv_change_hdmi(config):
         elif status == WebOSClient.REGISTERED:
           print("Registro correcto!")
           logging.info ("Registro correcto!")
-    print(store)
-    logging.info ('Copia la siguiente linea en el config.json, propiedad TV_KEY')
-    logging.info (store["client_key"])
+    if config.get("DebugLevel", 0) > 0:
+        print("TV:client key loaded")
     source_control = SourceControl(client)
     sources = source_control.list_sources()
     app = ApplicationControl(client)
@@ -198,12 +196,12 @@ def tv_change_hdmi(config):
     return("OK")
 
 def tv_set_prev(config):
-    print(config["TV_KEY"])
     if config["TV_KEY"]=='':
         store = {}
     else :
         store = {'client_key': config["TV_KEY"] }
-    print(store)
+    if config.get("DebugLevel", 0) > 0:
+        print("TV:client key loaded")
     client = WebOSClient(config["TV_IP"])
     try:
         client.connect()

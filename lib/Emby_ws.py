@@ -159,118 +159,186 @@ class xnoppo_ws(threading.Thread):
             self.EmbySession.currentdata["SubtitleStreamIndex"]=int(args['Index'])
         #elif cmd == 'SetVolume'
         
-    def _check_state(self,data, sessions):
+    def _check_state(self, data, sessions):
         if self.ws_config["MonitoredDevice"]:
+            item_data = None
+            item_data_list = None
+
             if sessions:
-                print ("=================================================================================")
+                if self.ws_config.get("DebugLevel", 0) > 1:
+                    print(f"Ws:Checking sessions for monitored device | sessions={len(data)}")
+
                 for item in data:
-                  if item["DeviceId"]==self.ws_config["MonitoredDevice"]:
-                  #if item["DeviceId"]=="e38485e9-a4c8-4cf5-9acd-3c4ece0fe532":
-                      item_data = item
-                      try:
-                         item_data_list=self.EmbySession.get_item_info(item_data["UserId"],item_data["NowPlayingItem"]["Id"])
-                         print ("=========== ITEM DATA LIST ===============")
-                         print (item_data_list)
-                         print ("=========== ITEM DATA LIST END ===============")
-                         break
-                      except:
-                         break
-            else:    
-                item_data = self.EmbySession.get_session_user_info(data["UserId"],self.ws_config["MonitoredDevice"])
-            #if item_data:
-            print(sessions)
-            print(data)
+                    if item["DeviceId"] == self.ws_config["MonitoredDevice"]:
+                        item_data = item
+                        try:
+                            now_playing = item_data.get("NowPlayingItem")
+                            if now_playing:
+                                item_data_list = self.EmbySession.get_item_info(
+                                    item_data["UserId"],
+                                    now_playing["Id"]
+                                )
+
+                                if self.ws_config.get("DebugLevel", 0) > 0:
+                                    print(
+                                        "Ws:Monitored item detected | "
+                                        f"device={item_data.get('DeviceName')} | "
+                                        f"title={now_playing.get('Name')} | "
+                                        f"type={now_playing.get('Type')} | "
+                                        f"container={now_playing.get('Container')}"
+                                    )
+                            break
+                        except Exception as e:
+                            if self.ws_config.get("DebugLevel", 0) > 0:
+                                print(f"Ws:Could not load monitored item details: {e}")
+                            break
+            else:
+                item_data = self.EmbySession.get_session_user_info(
+                    data["UserId"],
+                    self.ws_config["MonitoredDevice"]
+                )
+
             try:
-              if item_data["NowPlayingItem"]:
-                    #print(item_data)
+                if item_data["NowPlayingItem"]:
                     if self.MonitoredState == '':
-                        #print('Started Playing')
-                        if self.ws_config["DebugLevel"]>0: print(item_data["DeviceName"])
-                        if self.ws_config["DebugLevel"]>0: print(item_data["NowPlayingItem"]["Name"])
-                        if self.ws_config["DebugLevel"]>0: print(item_data["NowPlayingItem"]["Container"])
-                        self.MonitoredState=item_data["NowPlayingItem"]["Name"]
-                        itemtype=item_data["NowPlayingItem"]["Type"]
-                        item_id=item_data["NowPlayingItem"]["ParentId"]
-                        item_name=item_data["NowPlayingItem"]["Name"]
-                        if itemtype=="Episode":
-                            #item_lib_id=item_data["NowPlayingItem"]["SeriesId"]
-                            item_lib_id=item_data["NowPlayingItem"]["Path"]
-                        elif itemtype=="Movie":
-                            #item_lib_id=item_data["NowPlayingItem"]["Id"]
-                            item_lib_id=item_data["NowPlayingItem"]["Path"]
-                        views_list=self.ws_config["Libraries"]
-                        LibraryName=""
-                        encontrado=False
+                        if self.ws_config["DebugLevel"] > 0:
+                            print(item_data["DeviceName"])
+                        if self.ws_config["DebugLevel"] > 0:
+                            print(item_data["NowPlayingItem"]["Name"])
+                        if self.ws_config["DebugLevel"] > 0:
+                            print(item_data["NowPlayingItem"]["Container"])
+
+                        self.MonitoredState = item_data["NowPlayingItem"]["Name"]
+                        itemtype = item_data["NowPlayingItem"]["Type"]
+                        item_name = item_data["NowPlayingItem"]["Name"]
+
+                        if itemtype == "Episode":
+                            item_lib_id = item_data["NowPlayingItem"]["Path"]
+                        elif itemtype == "Movie":
+                            item_lib_id = item_data["NowPlayingItem"]["Path"]
+                        else:
+                            item_lib_id = item_data["NowPlayingItem"].get("Path", "")
+
+                        views_list = self.ws_config["Libraries"]
+                        LibraryName = ""
+                        encontrado = False
+
                         if self.ws_config["enable_all_libraries"]:
-                               LibraryName="All Libraries Enabled"
-                               encontrado=True
+                            LibraryName = "All Libraries Enabled"
+                            encontrado = True
                         else:
                             for view in views_list:
                                 view_data = {}
-                                if view["Active"]==True:
-                                        view_data["Name"] = view["Name"]
-                                        view_data["Id"] = view["Id"]
-                                        encontrado=self.EmbySession.is_item_in_library2(view["Id"],item_lib_id)
-                                        if encontrado:
-                                            LibraryName=view_data["Name"]
-                                            break
+                                if view["Active"] == True:
+                                    view_data["Name"] = view["Name"]
+                                    view_data["Id"] = view["Id"]
+                                    encontrado = self.EmbySession.is_item_in_library2(
+                                        view["Id"],
+                                        item_lib_id
+                                    )
+                                    if encontrado:
+                                        LibraryName = view_data["Name"]
+                                        break
+
                         if encontrado:
-                            if self.ws_config["DebugLevel"]>0: print("LIBRARY NAME: " + LibraryName)
-                            logging.debug('El item %s es de la libreria %s',item_name,LibraryName)
+                            if self.ws_config["DebugLevel"] > 0:
+                                print("LIBRARY NAME: " + LibraryName)
+
+                            logging.debug(
+                                'El item %s es de la libreria %s',
+                                item_name,
+                                LibraryName
+                            )
+
                             if sessions:
-                               userdata=item_data_list["UserData"]
+                                userdata = item_data_list["UserData"]
                             else:
-                               userdatalist=data["UserDataList"]
-                               userdata=userdatalist[0]
+                                userdatalist = data["UserDataList"]
+                                userdata = userdatalist[0]
+
                             try:
                                 playstate = item_data["PlayState"]
                             except:
                                 playstate = {}
+
                             data2 = {
-                                    "ItemIds":[int(item_data["NowPlayingItem"]["Id"])],
-                                    "StartIndex":0,
-                                    "StartPositionTicks": userdata["PlaybackPositionTicks"],
-                                    "MediaSourceId": playstate.get("MediaSourceId",""),
-                                    "AudioStreamIndex": playstate.get("AudioStreamIndex",1),
-                                    "SubtitleStreamIndex": playstate.get("SubtitleStreamIndex",-1),
-                                    "ControllingUserId":item_data["UserId"],
-                                    "SessionID": item_data["Id"],
-                                    "DeviceName": item_data["DeviceName"],
-                                    "Device_Id": self.ws_config["MonitoredDevice"]
-                                   }
-                            if self.ws_config["DebugLevel"]>0: print(data2)
-                            timeout=60
-                            time=0
-                            while self.EmbySession.playstate=="Loading" or time>timeout:
-                                    time.sleep(3)
-                                    time=time+3
-                            if self.EmbySession.playstate=="Playing" or self.EmbySession.playstate=="Replay":
-                                if self.ws_config["DebugLevel"]>0: print("ya se esta reproduciendo algo")
-                                playother(self.EmbySession,data2,True)
+                                "ItemIds": [int(item_data["NowPlayingItem"]["Id"])],
+                                "StartIndex": 0,
+                                "StartPositionTicks": userdata["PlaybackPositionTicks"],
+                                "MediaSourceId": playstate.get("MediaSourceId", ""),
+                                "AudioStreamIndex": playstate.get("AudioStreamIndex", 1),
+                                "SubtitleStreamIndex": playstate.get("SubtitleStreamIndex", -1),
+                                "ControllingUserId": item_data["UserId"],
+                                "SessionID": item_data["Id"],
+                                "DeviceName": item_data["DeviceName"],
+                                "Device_Id": self.ws_config["MonitoredDevice"]
+                            }
+
+                            if self.ws_config.get("DebugLevel", 0) > 0:
+                                print(
+                                    "Ws:Preparing playback handoff | "
+                                    f"item_id={data2['ItemIds'][0]} | "
+                                    f"device={data2['DeviceName']} | "
+                                    f"start_ticks={data2['StartPositionTicks']} | "
+                                    f"audio={data2['AudioStreamIndex']} | "
+                                    f"subtitle={data2['SubtitleStreamIndex']}"
+                                )
+
+                            timeout = 60
+                            elapsed = 0
+                            while self.EmbySession.playstate == "Loading" or elapsed > timeout:
+                                time.sleep(3)
+                                elapsed = elapsed + 3
+
+                            if self.EmbySession.playstate == "Playing" or self.EmbySession.playstate == "Replay":
+                                if self.ws_config["DebugLevel"] > 0:
+                                    print("ya se esta reproduciendo algo")
+                                playother(self.EmbySession, data2, True)
                             else:
-                                x = threading.Thread(target=self.thread_function_play, args=(data2,True))
+                                x = threading.Thread(
+                                    target=self.thread_function_play,
+                                    args=(data2, True)
+                                )
                                 x.start()
-                            return(0)
+
+                            return 0
                         else:
-                            if self.ws_config["DebugLevel"]>0: print('El item no es de ninguna libreria activa: ' + item_name)
-                            logging.debug('El item %s no es de ninguna libreria activa',item_name)
-                    elif item_data["NowPlayingItem"]["Name"]==self.MonitoredState:
-                        if self.ws_config["DebugLevel"]>0: print('Continue Playing')
-                        if self.ws_config["DebugLevel"]>0: print(item_data["DeviceName"])
-                        if self.ws_config["DebugLevel"]>0: print(self.MonitoredState)
-                        if self.ws_config["DebugLevel"]>0: print(item_data["NowPlayingItem"]["Name"])
+                            if self.ws_config["DebugLevel"] > 0:
+                                print('El item no es de ninguna libreria activa: ' + item_name)
+                            logging.debug(
+                                'El item %s no es de ninguna libreria activa',
+                                item_name
+                            )
+
+                    elif item_data["NowPlayingItem"]["Name"] == self.MonitoredState:
+                        if self.ws_config["DebugLevel"] > 0:
+                            print('Continue Playing')
+                        if self.ws_config["DebugLevel"] > 0:
+                            print(item_data["DeviceName"])
+                        if self.ws_config["DebugLevel"] > 0:
+                            print(self.MonitoredState)
+                        if self.ws_config["DebugLevel"] > 0:
+                            print(item_data["NowPlayingItem"]["Name"])
+
                     else:
-                        if self.ws_config["DebugLevel"]>0: print('Change Playing')
-                        if self.ws_config["DebugLevel"]>0: print(item_data["DeviceName"])
-                        if self.ws_config["DebugLevel"]>0: print(self.MonitoredState)
-                        if self.ws_config["DebugLevel"]>0: print(item_data["NowPlayingItem"]["Name"])
-##            else:
+                        if self.ws_config["DebugLevel"] > 0:
+                            print('Change Playing')
+                        if self.ws_config["DebugLevel"] > 0:
+                            print(item_data["DeviceName"])
+                        if self.ws_config["DebugLevel"] > 0:
+                            print(self.MonitoredState)
+                        if self.ws_config["DebugLevel"] > 0:
+                            print(item_data["NowPlayingItem"]["Name"])
+
             except:
-               if self.MonitoredState!='':
-                    if self.ws_config["DebugLevel"]>0: print('Stopped Playing')
-                    if self.ws_config["DebugLevel"]>0: print(item_data["DeviceName"])
-                    if self.ws_config["DebugLevel"]>0: print(self.MonitoredState)
-                    self.MonitoredState=''
+                if self.MonitoredState != '':
+                    if self.ws_config["DebugLevel"] > 0:
+                        print('Stopped Playing')
+                    if self.ws_config["DebugLevel"] > 0 and item_data:
+                        print(item_data.get("DeviceName"))
+                    if self.ws_config["DebugLevel"] > 0:
+                        print(self.MonitoredState)
+                    self.MonitoredState = ''
 
     def _playstate(self, data):
         command = data['Command']
@@ -295,36 +363,39 @@ class xnoppo_ws(threading.Thread):
             sendremotekey('PAU',self.ws_config)
 
     def on_message(self, ws, msg):
-        if self.ws_config["DebugLevel"] > 0: print("Ws:Message Arrived:" + msg)
-        if self.ws_config["DebugLevel"] > 0: print(self.EmbySession.playstate)
-        logging.debug("Ws:Message Arrived: %s", msg)
-        self.emby_state = "Message Arrived:" + msg
         msg_json = json.loads(msg)
-        msg_type = msg_json['MessageType']
-        logging.debug("Json Message: %s", msg_json)
+        msg_type = msg_json.get("MessageType")
+        data = msg_json.get('Data')
+
+        if self.ws_config.get("DebugLevel", 0) > 0:
+            if msg_type == "Sessions" and isinstance(data, list):
+                print(f"Ws:Message Arrived: Sessions | playstate={self.EmbySession.playstate} | sessions={len(data)}")
+            else:
+                print(f"Ws:Message Arrived: {msg_type} | playstate={self.EmbySession.playstate}")
+
+        logging.debug("Ws:Message Arrived: %s", msg_type)
+        self.emby_state = "Message Arrived:" + str(msg_type)
 
         if msg_type == 'Play':
-            data = msg_json['Data']
             self._play(data)
 
         elif msg_type == 'Playstate':
-            data = msg_json['Data']
             self._playstate(data)
 
         elif msg_type == "UserDataChanged":
-            data = msg_json['Data']
-            # self._check_state(data,False)
+            pass
+            # self._check_state(data, False)
 
         elif msg_type == "LibraryChanged":
-            data = msg_json['Data']
-        #          self._library_changed(data)
+            pass
+            # self._library_changed(data)
 
         elif msg_type == "GeneralCommand":
-            data = msg_json['Data']
             self._general_commands(data)
+
         elif msg_type == "Sessions":
-            data = msg_json['Data']
             self._check_state(data, True)
+
         else:
             logging.debug("WebSocket Message Type: %s", msg_type)
 
@@ -349,7 +420,9 @@ class xnoppo_ws(threading.Thread):
         uri = self.ws_config["emby_server"].replace('http://', 'ws://').replace('https://', 'wss://')
         uri = uri + '/?api_key=' + self.ws_user_info["AccessToken"] + '&deviceId=''Xnoppo'''
         #uri = uri + '/?api_key=' + self.ws_user_info["AccessToken"] + '&deviceId={}'
-        if self.ws_config["DebugLevel"]>0: print(uri)
+        if self.ws_config.get("DebugLevel", 0) > 0:
+            safe_uri = uri.replace(self.ws_user_info["AccessToken"], "***")
+            print(safe_uri)
         self.wsock = WebSocketApp(uri,
                                     on_open=self.on_open,
                                     on_message=self.on_message,
@@ -363,7 +436,6 @@ class xnoppo_ws(threading.Thread):
             if self.stop_websocket:
                 break
             self.emby_state='On run_forever'
-            #print("Reconnecting WebSocket")
 
         if self.ws_config["DebugLevel"]>0: print("WebSocketClient Stopped")
 
