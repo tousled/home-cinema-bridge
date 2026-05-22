@@ -1,5 +1,5 @@
 #
-# Thanks for websocket-client library. 
+# Thanks for websocket-client library.
 #
 # Copyright 2018 Hiroki Ohtani.
 #
@@ -15,7 +15,7 @@
 
 
 import threading
-from websocket import WebSocketApp    
+from websocket import WebSocketApp
 import logging
 import json
 import time
@@ -75,14 +75,14 @@ class XnoppoWs(threading.Thread):
         playto_file(self.EmbySession, data, scripterx)
         self.reload_config()
         print("Thread Play: finishing")
-    
+
     def set_lang(self,lang):
         self.ws_lang=lang
         self.EmbySession.lang=lang
 
     def reload_config(self):
         if self.ws_config["DebugLevel"]>0: print('Recargando Configuracion')
-        with open(self.config_file, 'r') as f:    
+        with open(self.config_file, 'r') as f:
                 config = json.load(f)
         f.close
         ## new options default config values
@@ -124,41 +124,6 @@ class XnoppoWs(threading.Thread):
         self.EmbySession.config=config
         return(config)
 
-    def _log_oppo_qpl_state(self, label):
-        try:
-            debug_level = self.ws_config.get("DebugLevel", 0)
-
-            if debug_level <= 0:
-                return
-
-            oppo_ip = self.ws_config.get("Oppo_IP")
-            if not oppo_ip:
-                print(f"QPL:{label} skipped | Oppo_IP is not configured")
-                return
-
-            client = OppoStatusClient(
-                host=oppo_ip,
-                port=int(self.ws_config.get("OPPO_Port", 23)),
-                timeout=float(self.ws_config.get("timeout_oppo_conection", 3)),
-            )
-
-            result = client.query_playback_state()
-
-            print(
-                f"QPL:{label} | "
-                f"raw={result.raw_response!r} | "
-                f"status={result.status} | "
-                f"category={result.category.value} | "
-                f"ok={result.ok}"
-            )
-
-        except Exception as exc:
-            try:
-                if self.ws_config.get("DebugLevel", 0) > 0:
-                    print(f"QPL:{label} | ERROR {type(exc).__name__}: {exc}")
-            except Exception:
-                pass
-
     def _play(self, data):
         command = data['PlayCommand']
         if command == 'PlayNow':
@@ -176,6 +141,7 @@ class XnoppoWs(threading.Thread):
             else:
                 x = threading.Thread(target=self.thread_function_play, args=(data,))
                 x.start()
+
     def _general_commands(self,data):
         cmd = data['Name']
         args = data['Arguments']
@@ -192,7 +158,7 @@ class XnoppoWs(threading.Thread):
             setsubstrack(self.ws_config,subs_index)
             self.EmbySession.currentdata["SubtitleStreamIndex"]=int(args['Index'])
         #elif cmd == 'SetVolume'
-        
+
     def _check_state(self, data, sessions):
         if self.ws_config["MonitoredDevice"]:
             item_data = None

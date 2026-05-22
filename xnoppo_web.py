@@ -1052,9 +1052,7 @@ class MyServer(BaseHTTPRequestHandler):
         if self.path == '/start_movie':
                 content_length = int(self.headers['Content-Length']) # <--- Gets the size of data
                 post_data = self.rfile.read(content_length) # <--- Gets the data itself
-                print(post_data)
                 data=json.loads(post_data.decode('utf-8'))
-                print(data)
                 emby_wsocket._play(data)
                 a = 'OK'
                 if a == 'OK':
@@ -1116,7 +1114,6 @@ if __name__ == "__main__":
        )
        logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s',datefmt='%d/%m/%Y %I:%M:%S %p',level=logging.DEBUG,handlers=[rfh])
 
-    config_file = str(ensure_config_exists())
     config = load_config(config_file, tv_path, av_path, lang_path)
     config_ready = is_configured(config)
     emby_wsocket = None

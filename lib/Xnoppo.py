@@ -1,16 +1,14 @@
-from urllib.parse import urlparse
-import urllib
+import logging
+import telnetlib
+import urllib.parse
 import requests
 import json
 import os
 import socket
 import time
-import telnetlib
-import threading
-import logging
-from .Emby_http import EmbyHttp
-from .Xnoppo_AVR import *
-from .Xnoppo_TV import *
+
+from .Xnoppo_AVR import av_check_power, av_power_off, av_change_hdmi
+from .Xnoppo_TV import tv_change_hdmi, tv_set_prev
 from .oppo_status_client import OppoStatusClient
 
 
@@ -47,7 +45,30 @@ def log_oppo_qpl_state(config, label):
         except Exception:
             pass
 
+def log_oppo_qpl_state_sequence(config, label, samples=5, interval=1):
+    try:
+        if config.get("DebugLevel", 0) <= 0:
+            return
 
+        print(
+            f"QPL:{label}:sequence_start | "
+            f"samples={samples} | interval={interval}s"
+        )
+
+        for index in range(samples):
+            log_oppo_qpl_state(config, f"{label}[{index + 1}/{samples}]")
+
+            if index < samples - 1:
+                time.sleep(interval)
+
+        print(f"QPL:{label}:sequence_end")
+
+    except Exception as exc:
+        try:
+            if config.get("DebugLevel", 0) > 0:
+                print(f"QPL:{label}:sequence | ERROR {type(exc).__name__}: {exc}")
+        except Exception:
+            pass
 
 def sendnotifyremote(UDP_IP):
     UDP_PORT = 7624
@@ -74,86 +95,55 @@ def check_socket(config,session_id=None):
               net_wait=net_wait+1
               logging.info('Esperando apertura del puerto del OPPO')
               logging.info( 'Reintento %s',str(net_wait))
-              #if session_id:
-              #      response_timeout = send_message2(session_id, 'Esperando conectar con el OPPO, reintento: ' + str(net_wait))
               sendnotifyremote(config["Oppo_IP"])
               result = sock.connect_ex((config["Oppo_IP"],436))
     if net_wait>=net_retries:
             logging.info('Timeout esperando puerto del OPPO')
-            #sys.exit("OPPO no disponible")
-            #if session_id:
-            #    response_timeout = send_message2(item_data["Id"], 'OPPO no disponible')
             return(1)
     else:
             logging.info('Puerto del OPPO abierto')
             return(0)
 
 def getmainfirmwareversion(config):
-    #if config["DebugLevel"]>0: print("getmainfirmwareversion\n")
     url = "http://" + config["Oppo_IP"] + ":436/getmainfirmwareversion"
     headers = {}
-    #if config["DebugLevel"]>0: print (url)
-    #if config["DebugLevel"]>0: print("\n")
     response = requests.get(url, headers=headers)
-    #if config["DebugLevel"]>0: print (response.text)
     return response.text
 
 def getsetupmenu(config):
-    #if config["DebugLevel"]>0: print("getsetupmenu\n")
     url = "http://" + config["Oppo_IP"] + ":436/getsetupmenu"
     headers = {}
-    #if config["DebugLevel"]>0: print (url)
-    #if config["DebugLevel"]>0: print("\n")
     response = requests.get(url, headers=headers)
-    #if config["DebugLevel"]>0: print (response.text)
     return response.text
 
 def OppoSignin(config):
-    #if config["DebugLevel"]>0: print("OppoSignin\n")
-    #url = "http://" + config["Oppo_IP"] + ":436/signin?%7B%22appIconType%22%3A1%2C%22appIpAddress%22%3A%22" + config["emby_server"] + "%22%7D"
     url = "http://" + config["Oppo_IP"] + ":436/signin?%7B%22appIconType%22%3A1%2C%22appIpAddress%22%3A%22" + '192.168.1.135' + "%22%7D"
     headers = {}
-    #if config["DebugLevel"]>0: print (url)
-    #if config["DebugLevel"]>0: print("\n")
     response = requests.get(url, headers=headers)
-    #if config["DebugLevel"]>0: print (response.text)
     return response.text
 
 def getdevicelist(config):
-    #if config["DebugLevel"]>0: print("getdevicelist\n")
     url = "http://" + config["Oppo_IP"] + ":436/getdevicelist"
     headers = {}
-    #if config["DebugLevel"]>0: print (url)
-    #if config["DebugLevel"]>0: print("\n")
     response = requests.get(url, headers=headers)
-    #if config["DebugLevel"]>0: print (response.text)
     return response.text
 
 def getglobalinfo(config):
-    #if config["DebugLevel"]>0: print("getglobalinfo\n")
     url = "http://" + config["Oppo_IP"] + ":436/getglobalinfo"
     headers = {}
-    #if config["DebugLevel"]>0: print (url)
-    #if config["DebugLevel"]>0: print("\n")
     response = requests.get(url, headers=headers)
-    #if config["DebugLevel"]>0: print (response.text)
     return response.text
 
 def getplayingtime(config):
-    #if config["DebugLevel"]>0: print("getplayingtime\n")
     url = "http://" + config["Oppo_IP"] + ":436/getplayingtime"
     headers = {}
-    #if config["DebugLevel"]>0: print (url)
-    #if config["DebugLevel"]>0: print("\n")
     response = requests.get(url, headers=headers)
-    #if config["DebugLevel"]>0: print (response.text)
     return response.text
 
 def mountSharedFolderID(server,folder,Username,Password,config):
     if config["DebugLevel"]==2:
         print("*** mountSharedFolderID ***")
     logging.debug("*** mountSharedFolder ***")
-    #url = "http://" + config["Oppo_IP"] + ":436/mountSharedFolder?{%22server%22:%22" + server + "%22,%22bWithID%22:1,%22folder%22:%22"+folder+"%22,%22userName%22:%22"+Username+"%22,%22password%22:%22"+Password+"%22,%22bRememberID%22:1}"
     url1 = "http://" + config["Oppo_IP"] + ':436/mountSharedFolder?'
     url = ''
     url = url + '{"server":"' + server + '",'
@@ -180,12 +170,10 @@ def mountSharedFolder(server,folder,Username,Password,config,checksmb=True):
     logging.debug("*** mountSharedFolder ***")
     if config["smbtrick"]== True and checksmb == True:
             smbtrick(server + '/' + folder,config)
-    #url = "http://" + config["Oppo_IP"] + ":436/mountSharedFolder?{%22server%22:%22" + server + "%22,%22bWithID%22:0,%22folder%22:%22"+folder+"%22,%22userName%22:%22"+Username+"%22,%22password%22:%22"+Password+"%22,%22bRememberID%22:1}"
     url1 = "http://" + config["Oppo_IP"] + ':436/mountSharedFolder?'
     url = ''
     url = url + '{"server":"' + server + '",'
     url = url + '"bWithID":0,"folder":"'+urllib.parse.quote(folder) + '",'
-#    url = url + '"bWithID":0,"folder":"'+ folder + '",'
     url = url + '"userName":"''",'
     url = url + '"password":"''",'
     url = url + '"bRememberID":0}'
@@ -207,7 +195,6 @@ def mountSharedNFSFolder(server,folder,Username,Password,config):
     if config["DebugLevel"]==2:
         print("*** mountSharedFolder ***")
     logging.debug("*** mountSharedFolder ***")
-    #url = "http://" + config["Oppo_IP"] + ":436/mountSharedFolder?{%22server%22:%22" + server + "%22,%22bWithID%22:0,%22folder%22:%22"+folder+"%22,%22userName%22:%22"+Username+"%22,%22password%22:%22"+Password+"%22,%22bRememberID%22:1}"
     url1 = "http://" + config["Oppo_IP"] + ':436/mountNfsSharedFolder?'
     url = ''
     url = url + '{"server":"' + server + '",'
@@ -228,10 +215,7 @@ def mountSharedNFSFolder(server,folder,Username,Password,config):
         return error
     logging.debug("*** Mount Response: %s",response.text)
     return response.text
-#mountNfsSharedFolderAgain
- #   http://192.168.1.141:436/mountNfsSharedFolder?{"server":"192.168.1.39","folder":"volume1/Para_Ver/Peliculas"}
-#    http://192.168.1.141:436/playnormalfile?{"path":"/mnt/nfs1/Valerian y la ciudad de los mil planetas (2017).iso","index":0,"type":1,"appDeviceType":2,"extraNetPath":"192.168.1.39","playMode":0}
-    
+
 def LoginNFS(config,server):
     logging.debug("LoginNFS")
     url = "http://" + config["Oppo_IP"] + ':436/loginNfsServer?{"serverName":"'+ str(server) + '"}'
@@ -264,23 +248,11 @@ def playnormalfile(server,filename,index,config,nfs):
     if config["DebugLevel"]==2:
         print("*** playnormalfile ***")
     logging.debug("*** playnormalfile ***")
-    url0 = 'http://' + config["Oppo_IP"] + ':436/playnormalfile?{' + urllib.parse.quote('"path":"/mnt/cifs1/' + filename + '","index":'+ index +',"type":1,"appDeviceType":2,"extraNetPath":"'+ server + '","playMode":0')+'}'
-    #url0 = "http://" + config["Oppo_IP"] + ":436/playnormalfile?{%22path%22:%22/mnt/cifs1/" + urllib.parse.quote(filename) + "%22,%22index%22:"+ index +",%22type%22:1,%22appDeviceType%22:2,%22extraNetPath%22:%22"+ server + "%22,%22playMode%22:0}"
     if nfs:
-        #url0 = "http://" + config["Oppo_IP"] + ":436/playnormalfile?{%22path%22:%22/mnt/nfs1/" + urllib.parse.quote(filename) + "%22,%22index%22:"+ index +",%22type%22:1,%22appDeviceType%22:2,%22extraNetPath%22:%22"+ server + "%22,%22playMode%22:0}"
         url0 = 'http://' + config["Oppo_IP"] + ':436/playnormalfile?{' + urllib.parse.quote('"path":"/mnt/nfs1/' + filename + '","index":'+ index +',"type":1,"appDeviceType":2,"extraNetPath":"'+ server + '","playMode":0')+'}'
     else:
         url0 = 'http://' + config["Oppo_IP"] + ':436/playnormalfile?{' + urllib.parse.quote('"path":"/mnt/cifs1/' + filename + '","index":'+ index +',"type":1,"appDeviceType":2,"extraNetPath":"'+ server + '","playMode":0')+'}'
-        #url0 = "http://" + config["Oppo_IP"] + ":436/playnormalfile?{%22path%22:%22/mnt/cifs1/" + urllib.parse.quote(filename) + "%22,%22index%22:"+ index +",%22type%22:1,%22appDeviceType%22:2,%22extraNetPath%22:%22"+ server + "%22,%22playMode%22:0}"
-    url1 = "http://" + config["Oppo_IP"] + ':436/playnormalfile?'
-    url = ''
-    url = url + '"index":"' + index + '",'
-    url = url + '"type":1,'
-    url = url + '"appDeviceType":2,'
-    url = url + '"extraNetPath":"'+ server + '",'
-    url = url + '"playMode":0}'
     headers = {}
-    url = url1 + url
     logging.debug(url0)
     try:
         response = requests.get(url0, headers=headers,timeout=config["timeout_oppo_playitem"])
@@ -355,7 +327,6 @@ def getfilelist(config,folder,nfs):
                 file={}
                 file["Id"]=indice
                 file["Foldername"]=e
-                #if config["DebugLevel"]>0: print (e)
                 indice=indice+1
                 files.append(file)
     if config["DebugLevel"]==2:
@@ -396,7 +367,6 @@ def getNfsShareFolderlist(config):
                 file={}
                 file["Id"]=indice
                 file["Foldername"]=e
-                #if config["DebugLevel"]>0: print (e)
                 indice=indice+1
                 files.append(file)
     if config["DebugLevel"]==2:
@@ -437,7 +407,6 @@ def getSambaShareFolderlist(config):
                 file={}
                 file["Id"]=indice
                 file["Foldername"]=e
-                #if config["DebugLevel"]>0: print (e)
                 indice=indice+1
                 files.append(file)
     if config["DebugLevel"]==2:
@@ -515,16 +484,8 @@ def navigate_folder(path,config):
         else:
             servidor = path[inicio:final]
             final=final+1
-            result=path.find(word,final,len(path))
             carpeta = path[final:len(path)]
             last_folder='/'
-            #if result <0:
-            #    carpeta = path[final:len(path)]
-            #    last_folder='/'
-            #else:
-            #    carpeta=path[final:result]
-            #    result=result+1
-            #    last_folder=path[result:len(path)]
             for device in device_list["devicelist"]:
                 if device["name"].upper()==servidor.upper():
                     if device["sub_type"]=="nfs":
@@ -538,7 +499,6 @@ def navigate_folder(path,config):
                 response=json.loads(response_login)
                 if response["success"]==True:
                    response_data7 = mountSharedNFSFolder(servidor,carpeta,'','',config)
-                   response=json.loads(response_login)
                 else:
                    files=[]
                    file={}
@@ -621,7 +581,7 @@ def smbtrick(path,config):
         for file in files:
            if file["Foldername"]!='..':
             if file["Foldername"].upper()!=carpeta.upper():
-                response_data7 = mountSharedFolder(servidor,file["Foldername"],'','',config,False)
+                mountSharedFolder(servidor,file["Foldername"],'','',config,False)
                 if config["DebugLevel"]>0:
                     print(servidor  + "-" + file["Foldername"])
                 return(0)
@@ -631,11 +591,11 @@ def smbtrick(path,config):
         for device in device_list["devicelist"]:
             if device["name"].upper()!=servidor.upper():
                 if device["sub_type"]=="cifs":
-                    response_login = LoginSambaWithOutID(config,device["name"])
+                    LoginSambaWithOutID(config,device["name"])
                     files=getSambaShareFolderlist(config)
                     for file in files:
                         if file["Foldername"]!='..':
-                            response_data7 = mountSharedFolder(device["name"],file["Foldername"],'','',config,False)
+                            mountSharedFolder(device["name"],file["Foldername"],'','',config,False)
                             return(0)
 
 def setaudiotrack(config,audio_index):
@@ -657,18 +617,6 @@ def LoginSambaWithOutID(config,server):
         print("*** LoginSambaWithOutID Response: " + response.text)
     logging.debug("*** LoginSambaWithOutID Response: %s",response.text)
     return response.text
-
-def getaudiotrack(config):
-    logging.debug("getaudiotrack")
-    url = "http://" + config["Oppo_IP"] + ':436/getaudiomenulist?'
-    headers = {}
-    logging.debug(url)
-    response = requests.get(url, headers=headers)
-    logging.debug("*** getaudiotrack Response: %s",response.text)
-    for audio in response["audio_list"]:
-        if audio["selected"]==True:
-                 return(audio["index"])
-    return(0)
 
 def getmaxaudiotrack(config):
     logging.debug("getaudiotrack")
@@ -718,21 +666,9 @@ def getsubstrack(config):
         return(0)
 
 def sendremotekey(key,config):
-    #if config["DebugLevel"]>0: print("sendremotekey\n")
     url = "http://" + config["Oppo_IP"] + ":436/sendremotekey?%7B%22key%22%3A%22" + key + "%22%7D"
     headers = {}
-    #if config["DebugLevel"]>0: print (url)
     response = requests.get(url, headers=headers)
-    #if config["DebugLevel"]>0: print (response.text)
-    return response.text
-
-def playcdfile(server,filename,index):
-    print("playcdfile\n")
-    url = "http://" + config["Oppo_IP"] + ":436/playcdfile?{%22path%22:%22/mnt/cifs1/" + filename + "%22,%22index%22:"+ index +",%22type%22:1,%22appDeviceType%22:2,%22extraNetPath%22:%22"+ server + "%22,%22playMode%22:0}"
-    headers = {}
-    print (url)
-    response = requests.get(url, headers=headers)
-    print (response.text)
     return response.text
 
 def playother(EmbySession,data,scripterx=False):
@@ -745,28 +681,38 @@ def playother(EmbySession,data,scripterx=False):
     logging.info("-----------------------------------------------------------")
     if scripterx:
             if EmbySession.config["DebugLevel"]>0: print("Iniciando en el OPPO - X")
-            response_data4 = EmbySession.send_message2(params["Session_id"], EmbySession.lang["x_msg_init_oppo"])
+            EmbySession.send_message2(params["Session_id"], EmbySession.lang["x_msg_init_oppo"])
     else:
             if EmbySession.config["DebugLevel"]>0: print("Iniciando en el OPPO")
-            response_data4 = EmbySession.send_user_message(params["ControllingUserId"], EmbySession.lang["x_msg_init_oppo"])
+            EmbySession.send_user_message(params["ControllingUserId"], EmbySession.lang["x_msg_init_oppo"])
     file_mockup = FilePath[:len(FilePath)-3] + 'txt'
-    logging.debug('File_mockup: %s',file_mockup)
+    logging.debug('File_mockup: %s', file_mockup)
+
     if os.path.isfile(file_mockup):
-            f3 = open(file_mockup,'r')
-            for line in f3:
-                newitem=line
-            f3.close
-            if EmbySession.config["DebugLevel"]>0: print ('File_encontrado - contenido: ' + line)
-            logging.debug('File_encontrado - contenido: %s',line)
-            ItemInfo = EmbySession.get_item_info2(EmbySession.user_info["User"]["Id"],params["item_id"],params["media_source_id"])
-            movie = ItemInfo["Path"]
-            Container = ItemInfo["Container"]
+        with open(file_mockup, 'r') as f3:
+            newitem = f3.read().strip()
+
+        if EmbySession.config["DebugLevel"] > 0:
+            print('File_encontrado - contenido: ' + newitem)
+        logging.debug('File_encontrado - contenido: %s', newitem)
+
+        if newitem:
+            ItemInfo = EmbySession.get_item_info2(
+                EmbySession.user_info["User"]["Id"],
+                newitem,
+                params["media_source_id"]
+            )
+
+        movie = ItemInfo["Path"]
+        Container = ItemInfo["Container"]
     else:
-            if scripterx:
-                if EmbySession.config["DebugLevel"]>0: print("Paramos reproduccion en el dispositivo")
-                response_data2 = EmbySession.playback_stop(params["Session_id"])
-            movie = ItemInfo["Path"]
-            Container = ItemInfo["Container"]
+        if scripterx:
+            if EmbySession.config["DebugLevel"] > 0:
+                print("Paramos reproduccion en el dispositivo")
+            EmbySession.playback_stop(params["Session_id"])
+
+        movie = ItemInfo["Path"]
+        Container = ItemInfo["Container"]
     logging.info('Ruta antes de los reemplazos por server: %s', movie)
     server_list=EmbySession.config["servers"]
     for server in server_list:
@@ -817,18 +763,17 @@ def playother(EmbySession,data,scripterx=False):
                     nfs=False
                     break
     if nfs:
-        response_login = LoginNFS(EmbySession.config,servidor)
+        LoginNFS(EmbySession.config,servidor)
         response_data7 = mountSharedNFSFolder(servidor,carpeta,'','',EmbySession.config)
     else:
-        response_login = LoginSambaWithOutID(EmbySession.config,servidor)
+        LoginSambaWithOutID(EmbySession.config,servidor)
         response_data7 = mountSharedFolder(servidor,carpeta,'','',EmbySession.config)
-    response_mount=json.loads(response_data7)
-    #if EmbySession.config["DebugLevel"]>0: print(response)
+    json.loads(response_data7)
     if Container=='bluray':
             response_data8 = checkfolderhasbdmv(EmbySession.config,fichero,nfs)
     else:
             response_data8 = playnormalfile(servidor,fichero,'0',EmbySession.config,nfs)
-    response_play=json.loads(response_data8)
+    json.loads(response_data8)
     log_oppo_qpl_state(EmbySession.config, "after_playnormalfile")
     timer=0
     timeout=EmbySession.config["timeout_oppo_playitem"]
@@ -837,13 +782,14 @@ def playother(EmbySession,data,scripterx=False):
     while response_data_gb.find('"is_video_playing":false') > 0 and timer<timeout:
                 time.sleep(2)
                 response_data_gb = getglobalinfo(EmbySession.config)
+                log_oppo_qpl_state(EmbySession.config, "before_getglobalinfo_loop")
                 timer=timer+1
                 logging.debug('getglobalinfo: %s',response_data_gb)
     if timer>=timeout:
        if scripterx:
-          response_data9 = EmbySession.send_message2(params["Session_id"], EmbySession.lang["x_msg_timeout_play"])
+          EmbySession.send_message2(params["Session_id"], EmbySession.lang["x_msg_timeout_play"])
        else:
-          response_data9 = EmbySession.send_user_message(params["ControllingUserId"], EmbySession.lang["x_msg_timeout_play"])
+          EmbySession.send_user_message(params["ControllingUserId"], EmbySession.lang["x_msg_timeout_play"])
           logging.info('Timeout Reproduciendo %s',movie)
        EmbySession.playstate="Playing"
     else:
@@ -881,7 +827,7 @@ def playto_file(EmbySession,data,scripterx=False):
     FilePath = ItemInfo["Path"]
     if scripterx:
        if EmbySession.config["DebugLevel"]>0: print("Paramos reproduccion en el dispositivo")
-       response_data2 = EmbySession.playback_stop(params["Session_id"])
+       EmbySession.playback_stop(params["Session_id"])
     movie = ""
     if scripterx:
         result=check_socket(EmbySession.config,params["Session_id"])
@@ -890,21 +836,21 @@ def playto_file(EmbySession,data,scripterx=False):
     if result==0:
         if scripterx:
             if EmbySession.config["DebugLevel"]>0: print("Iniciando en el OPPO - X")
-            response_data4 = EmbySession.send_message2(params["Session_id"], EmbySession.lang["x_msg_init_oppo"])
+            EmbySession.send_message2(params["Session_id"], EmbySession.lang["x_msg_init_oppo"])
         else:
             if EmbySession.config["DebugLevel"]>0: print("Iniciando en el OPPO")
-            response_data4 = EmbySession.send_user_message(params["ControllingUserId"], EmbySession.lang["x_msg_init_oppo"])
-        response_data6a = getmainfirmwareversion(EmbySession.config)
-        response_data6c = getdevicelist(EmbySession.config)
-        response_data6b = getsetupmenu(EmbySession.config)
-        response_data6c = OppoSignin(EmbySession.config)
-        response_data6d = getdevicelist(EmbySession.config)
-        response_data6e = getglobalinfo(EmbySession.config)
+            EmbySession.send_user_message(params["ControllingUserId"], EmbySession.lang["x_msg_init_oppo"])
+        getmainfirmwareversion(EmbySession.config)
+        getdevicelist(EmbySession.config)
+        getsetupmenu(EmbySession.config)
+        OppoSignin(EmbySession.config)
+        getdevicelist(EmbySession.config)
+        getglobalinfo(EmbySession.config)
         response_data6f = getdevicelist(EmbySession.config)
-        response_data_on = sendremotekey("EJT",EmbySession.config)
+        sendremotekey("EJT",EmbySession.config)
         if EmbySession.config["BRDisc"]==True:
             time.sleep(1)
-            response_data_on = sendremotekey("EJT",EmbySession.config)    
+            sendremotekey("EJT",EmbySession.config)
         if EmbySession.config["AV"]==True:
             if EmbySession.config["DebugLevel"]>0: print("AV POWER")
             logging.info ('Comprobamos que esta encendido el AV')
@@ -915,25 +861,27 @@ def playto_file(EmbySession,data,scripterx=False):
             except:
                pass
         time.sleep(1)
-        response_data6b = getsetupmenu(EmbySession.config)
+        getsetupmenu(EmbySession.config)
         file_mockup = FilePath[:len(FilePath)-3] + 'txt'
-        logging.debug('File_mockup: %s',file_mockup)
+        logging.debug('File_mockup: %s', file_mockup)
+
         if os.path.isfile(file_mockup):
-            f3 = open(file_mockup,'r')
-            for line in f3:
-                newitem=line
-            f3.close
-            if EmbySession.config["DebugLevel"]>0: print ('File_encontrado - contenido: ' + line)
-            logging.debug('File_encontrado - contenido: %s',line)
-            ItemInfo = EmbySession.get_item_info2(EmbySession.user_info["User"]["Id"],newitem,params["media_source_id"])
-            movie = ItemInfo["Path"]
-            Container = ItemInfo["Container"]
-        else:
-##            if scripterx:
-##                if EmbySession.config["DebugLevel"]>0: print("Paramos reproduccion en el dispositivo")
-##                response_data2 = EmbySession.playback_stop(params["Session_id"])
-            movie = ItemInfo["Path"]
-            Container = ItemInfo["Container"]
+            with open(file_mockup, 'r') as f3:
+                newitem = f3.read().strip()
+
+            if EmbySession.config["DebugLevel"] > 0:
+                print('File_encontrado - contenido: ' + newitem)
+            logging.debug('File_encontrado - contenido: %s', newitem)
+
+            if newitem:
+                ItemInfo = EmbySession.get_item_info2(
+                    EmbySession.user_info["User"]["Id"],
+                    newitem,
+                    params["media_source_id"]
+                )
+
+        movie = ItemInfo["Path"]
+        Container = ItemInfo["Container"]
         logging.info("-----------------------------------------------------------")
         logging.info('Ruta antes de los reemplazos por server: %s', movie)
         server_list=EmbySession.config["servers"]
@@ -965,13 +913,6 @@ def playto_file(EmbySession,data,scripterx=False):
         final=final+1
         ultimo=ultimo-1
         carpeta=movie[final:ultimo]
-        # test
-        #final = carpeta.find(word)
-        #SharedFolder = carpeta[0:final]
-        #carpeta=carpeta[final+1:len(carpeta)]
-        #fichero=carpeta + word + fichero
-        #carpeta = SharedFolder
-        # /test
         logging.info("Servidor               : %s", servidor)
         logging.info("Fichero                : %s", fichero)   
         logging.info("Carpeta                : %s",carpeta)
@@ -1002,36 +943,23 @@ def playto_file(EmbySession,data,scripterx=False):
                     nfs=False
                     break
         if nfs:
-            response_login = LoginNFS(EmbySession.config,servidor)
-            response_share = getNfsShareFolderlist(EmbySession.config)
+            LoginNFS(EmbySession.config,servidor)
+            getNfsShareFolderlist(EmbySession.config)
         else:
-            response_login = LoginSambaWithOutID(EmbySession.config,servidor)
-            response_share = getSambaShareFolderlist(EmbySession.config)
-        # Test
-        #for share in response_share:
-        #    if EmbySession.config["DebugLevel"]>0: print(share["Foldername"])
-        #    if carpeta.upper().startswith(share["Foldername"].upper()):
-        #            sharefolder=share["Foldername"]
-        #            i = len(sharefolder)
-        #            nfolder = carpeta[i+1:len(carpeta)]
-        #            fichero= nfolder + '/' + fichero
-        #            carpeta = sharefolder
-        #            if EmbySession.config["DebugLevel"]>0: print(carpeta)
-        #            if EmbySession.config["DebugLevel"]>0: print(fichero)
-        #            break
+            LoginSambaWithOutID(EmbySession.config,servidor)
+            getSambaShareFolderlist(EmbySession.config)
         if EmbySession.config["Always_ON"]==False:
             time.sleep(5)
-        response_data6b = getsetupmenu(EmbySession.config)
+        getsetupmenu(EmbySession.config)
         if scripterx:
-            response_data9 = EmbySession.send_message2(params["Session_id"], EmbySession.lang["x_msg_wait_for_mount"] ,1999)
+            EmbySession.send_message2(params["Session_id"], EmbySession.lang["x_msg_wait_for_mount"] ,1999)
         else:
-            response_data9 = EmbySession.send_user_message(params["ControllingUserId"], EmbySession.lang["x_msg_wait_for_mount"] ,1999)
+            EmbySession.send_user_message(params["ControllingUserId"], EmbySession.lang["x_msg_wait_for_mount"] ,1999)
         if nfs:
             response_data7 = mountSharedNFSFolder(servidor,carpeta,'','',EmbySession.config)
         else:
             response_data7 = mountSharedFolder(servidor,carpeta,'','',EmbySession.config)
         response_mount=json.loads(response_data7)
-        #if EmbySession.config["DebugLevel"]>0: print(response)
         if response_mount["success"]==True:
             if Container=='bluray':
                 response_data8 = checkfolderhasbdmv(EmbySession.config,fichero,nfs)
@@ -1041,26 +969,27 @@ def playto_file(EmbySession,data,scripterx=False):
             log_oppo_qpl_state(EmbySession.config, "after_playnormalfile")
             if response_play["success"]==True:
                 response_data_gb = getglobalinfo(EmbySession.config)
+                log_oppo_qpl_state(EmbySession.config, "before_getglobalinfo_loop")
                 timer=0
                 timeout=EmbySession.config["timeout_oppo_playitem"]
                 while response_data_gb.find('"is_video_playing":false') > 0 and timer<timeout:
                         time.sleep(1)
                         response_data_gb = getglobalinfo(EmbySession.config)
+                        log_oppo_qpl_state(EmbySession.config, "before_getglobalinfo_loop")
                         timer=timer+1
                         logging.debug('getglobalinfo: %s',response_data_gb)
                         if scripterx:
-                            response_data9 = EmbySession.send_message2(params["Session_id"], EmbySession.lang["x_msg_wait_for_play"] + str(timer) + 's',999)
+                            EmbySession.send_message2(params["Session_id"], EmbySession.lang["x_msg_wait_for_play"] + str(timer) + 's',999)
                         else:
-                            response_data9 = EmbySession.send_user_message(params["ControllingUserId"], EmbySession.lang["x_msg_wait_for_play"] + str(timer) + 's',999)                
+                            EmbySession.send_user_message(params["ControllingUserId"], EmbySession.lang["x_msg_wait_for_play"] + str(timer) + 's',999)
                 logging.debug('getglobalinfo: %s',response_data_gb)
                 if timer>=timeout:
                     if scripterx:
-                        response_data9 = EmbySession.send_message2(params["Session_id"], EmbySession.lang["x_msg_timeout_play"])
+                        EmbySession.send_message2(params["Session_id"], EmbySession.lang["x_msg_timeout_play"])
                     else:
-                        response_data9 = EmbySession.send_user_message(params["ControllingUserId"], EmbySession.lang["x_msg_timeout_play"])
+                        EmbySession.send_user_message(params["ControllingUserId"], EmbySession.lang["x_msg_timeout_play"])
                     logging.info('Timeout Reproduciendo %s',movie)
                 else:
-                    #if scripterx==False:
                     EmbySession.playstate="Playing"
                     EmbySession.playnow(data)
                     if EmbySession.config["DebugLevel"]>0: print(params["auto_resume"])
@@ -1090,9 +1019,7 @@ def playto_file(EmbySession,data,scripterx=False):
                             if EmbySession.config["DebugLevel"]>0: print (response_data5)
                     else:
                         if scripterx==True:
-                            response_data9 = EmbySession.send_message2(params["Session_id"], EmbySession.lang["x_msg_init_play"] + movie)
-                        #else:
-                        #    response_data9 = EmbySession.send_user_message(params["ControllingUserId"], 'Reproduccion Iniciada: ' + movie)
+                            EmbySession.send_message2(params["Session_id"], EmbySession.lang["x_msg_init_play"] + movie)
                         logging.info('Reprodución iniciada: %s',movie)
                     if EmbySession.config["AV"]==True:
                         if EmbySession.config["DebugLevel"]>0: print("AV")
@@ -1105,6 +1032,7 @@ def playto_file(EmbySession,data,scripterx=False):
                         except:
                             pass
                     response_data_gb = getglobalinfo(EmbySession.config)
+                    log_oppo_qpl_state(EmbySession.config, "before_getglobalinfo_loop")
                     cur_time=0
                     total_time=0
                     playingtime={}
@@ -1125,6 +1053,7 @@ def playto_file(EmbySession,data,scripterx=False):
                           time.sleep(1)
                           if EmbySession.playstate!='Replay':
                               response_data_gb = getglobalinfo(EmbySession.config)
+                              log_oppo_qpl_state(EmbySession.config, "before_getglobalinfo_loop")
                               if response_data_gb.find('"is_video_playing":true') > 0:
                                   response_playing_time = getplayingtime(EmbySession.config)
                                   playingtime = json.loads(response_playing_time)
@@ -1136,7 +1065,6 @@ def playto_file(EmbySession,data,scripterx=False):
                                   total_time=playingtime["total_time"]
                                   totalticks=total_time*10000000
                               if scripterx==False:
-                              #if EmbySession.config["DebugLevel"]>0: print(EmbySession.currentdata['ItemIds'])
                                   EmbySession.playingprogress(EmbySession.currentdata,positionticks,totalticks,ispaused,ismuted)
                                   EmbySession.setitemplaybackposition(EmbySession.currentdata,positionticks,False)
                     logging.info("-----------------------------------------------------------")
@@ -1144,18 +1072,19 @@ def playto_file(EmbySession,data,scripterx=False):
                     logging.debug('PlayingTime: %s de %s',str(playingtime["cur_time"]),str(total_time))
                     if EmbySession.config["DebugLevel"]>0: print('PlayingTime Final: ' + str(playingtime["cur_time"]) + " de " + str(total_time))
                     log_oppo_qpl_state(EmbySession.config, "after_getglobalinfo_loop")
-                    #positionticks=playingtime["cur_time"]*10000000
-                    #if scripterx==False:
-                    #if EmbySession.config["DebugLevel"]>0: print(EmbySession.currentdata['ItemIds'])
                     EmbySession.playingstopped(EmbySession.currentdata,positionticks,ispaused,ismuted)
                     played=False
                     if total_time>0:
                         if (positionticks/total_time)>0.95:
                             played=True
-                    #if EmbySession.config["DebugLevel"]>0: print(EmbySession.currentdata['ItemIds'])
                     EmbySession.setitemplaybackposition(EmbySession.currentdata,positionticks,played)
-                    #params["DeviceName"]=EmbySession.config["TV_DeviceName"]
-                    log_oppo_qpl_state(EmbySession.config, "before_return_to_tv")
+
+                    log_oppo_qpl_state_sequence(
+                        EmbySession.config,
+                        "before_return_to_tv",
+                        samples=5,
+                        interval=1,
+                    )
                     if EmbySession.config["TV"]==True:
                         if EmbySession.config["DebugLevel"]>0: print("Cambiamos a la app anterior en la TV")
                         logging.info ("Cambiamos a la app anterior en la TV")
@@ -1171,36 +1100,45 @@ def playto_file(EmbySession,data,scripterx=False):
                 except:
                    error='No hay mas info'
                 if scripterx:
-                   response_data9 = EmbySession.send_message2(params["Session_id"],EmbySession.lang["x_msg_error_play"] + fichero + '- info:' + error,5000)
+                   EmbySession.send_message2(params["Session_id"],EmbySession.lang["x_msg_error_play"] + fichero + '- info:' + error,5000)
                 else:
-                   response_data9 = EmbySession.send_user_message(params["ControllingUserId"], EmbySession.lang["x_msg_error_play"] + fichero + ' - info:' + error,5000)
-                #   response_data3 = set_movie(item_data["Id"],sys.argv[3],sys.argv[4],sys.argv[5])                    
+                   EmbySession.send_user_message(params["ControllingUserId"], EmbySession.lang["x_msg_error_play"] + fichero + ' - info:' + error,5000)
         else:
            try:
                error = response_mount["retInfo"]
            except:
-               error='No hay mas info'
+               error = 'No hay mas info'
+
+           mount_path = servidor + '/' + carpeta
+           mount_path_len = len(mount_path)
+           error_message = (
+               EmbySession.lang["x_msg_error_mount"]
+               + mount_path
+               + ' - info:'
+               + error
+               + ' long:'
+               + str(mount_path_len)
+           )
+
            if scripterx:
-               l=len(servidor + '/' + carpeta)
-               response_data9 = EmbySession.send_message2(params["Session_id"],EmbySession.lang["x_msg_error_mount"] + servidor + '/' + carpeta + ' - info:' + error + ' long:' + l,5000)
+               EmbySession.send_message2(params["Session_id"], error_message, 5000)
            else:
-               l=len(servidor + '/' + carpeta)
-               response_data9 = EmbySession.send_user_message(params["ControllingUserId"], EmbySession.lang["x_msg_error_mount"]  + servidor + '/' + carpeta + ' - info:' + error + ' long:' + l,5000)
+               EmbySession.send_user_message(params["ControllingUserId"], error_message, 5000)
         if EmbySession.config["Autoscript"]==True:
             result=umountSharedFolder(EmbySession.config)
             if EmbySession.config["DebugLevel"]>0: print("Unmount result: " + result)
         if EmbySession.config["AV"]==True and EmbySession.config["AV_Always_ON"]==False:
             if EmbySession.config["DebugLevel"]>0: print ("AV POWER OFF")
-            result = av_power_off(EmbySession.config)
+            av_power_off(EmbySession.config)
         if EmbySession.config["Always_ON"]==False:
-            response_data_off = sendremotekey("POF",EmbySession.config)
+            sendremotekey("POF",EmbySession.config)
     else:
         if scripterx==True:
-            response_timeout = EmbySession.send_message2(params["Session_id"], EmbySession.lang["x_msg_error_no_oppo"] )
+            EmbySession.send_message2(params["Session_id"], EmbySession.lang["x_msg_error_no_oppo"] )
         else:
-            response_timeout = EmbySession.send_user_message(params["ControllingUserId"], EmbySession.lang["x_msg_error_no_oppo"])
+            EmbySession.send_user_message(params["ControllingUserId"], EmbySession.lang["x_msg_error_no_oppo"])
     if scripterx==True:
-        response_data3 = EmbySession.set_movie(params["Session_id"],params["item_id"],ItemInfo["Type"],ItemInfo["Name"])
+        EmbySession.set_movie(params["Session_id"],params["item_id"],ItemInfo["Type"],ItemInfo["Name"])
     EmbySession.playstate="Free"
     EmbySession.server = ""
     EmbySession.playedtitle = ""
