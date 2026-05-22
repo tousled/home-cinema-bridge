@@ -23,7 +23,7 @@ from .Emby_http import EmbyHttp
 from lib.playback_manager import PlaybackManager
 from .Xnoppo import *
 
-class xnoppo_ws(threading.Thread):
+class XnoppoWs(threading.Thread):
     emby_state=''
     stop_websocket = False
     ws_config=None
@@ -123,7 +123,42 @@ class xnoppo_ws(threading.Thread):
         self.ws_config=config
         self.EmbySession.config=config
         return(config)
-    
+
+    def _log_oppo_qpl_state(self, label):
+        try:
+            debug_level = self.ws_config.get("DebugLevel", 0)
+
+            if debug_level <= 0:
+                return
+
+            oppo_ip = self.ws_config.get("Oppo_IP")
+            if not oppo_ip:
+                print(f"QPL:{label} skipped | Oppo_IP is not configured")
+                return
+
+            client = OppoStatusClient(
+                host=oppo_ip,
+                port=int(self.ws_config.get("OPPO_Port", 23)),
+                timeout=float(self.ws_config.get("timeout_oppo_conection", 3)),
+            )
+
+            result = client.query_playback_state()
+
+            print(
+                f"QPL:{label} | "
+                f"raw={result.raw_response!r} | "
+                f"status={result.status} | "
+                f"category={result.category.value} | "
+                f"ok={result.ok}"
+            )
+
+        except Exception as exc:
+            try:
+                if self.ws_config.get("DebugLevel", 0) > 0:
+                    print(f"QPL:{label} | ERROR {type(exc).__name__}: {exc}")
+            except Exception:
+                pass
+
     def _play(self, data):
         command = data['PlayCommand']
         if command == 'PlayNow':
@@ -141,7 +176,6 @@ class xnoppo_ws(threading.Thread):
             else:
                 x = threading.Thread(target=self.thread_function_play, args=(data,))
                 x.start()
-            #playto_file(self.EmbySession,data)
     def _general_commands(self,data):
         cmd = data['Name']
         args = data['Arguments']
@@ -438,4 +472,3 @@ class xnoppo_ws(threading.Thread):
             self.emby_state='On run_forever'
 
         if self.ws_config["DebugLevel"]>0: print("WebSocketClient Stopped")
-

@@ -1,11 +1,8 @@
-import hashlib
 from urllib.parse import urlparse
-from urllib.parse import quote
 import urllib
 import requests
 import json
 import os
-import sys
 import socket
 import time
 import telnetlib
@@ -14,6 +11,42 @@ import logging
 from .Emby_http import EmbyHttp
 from .Xnoppo_AVR import *
 from .Xnoppo_TV import *
+from .oppo_status_client import OppoStatusClient
+
+
+def log_oppo_qpl_state(config, label):
+    try:
+        if config.get("DebugLevel", 0) <= 0:
+            return
+
+        oppo_ip = config.get("Oppo_IP")
+        if not oppo_ip:
+            print(f"QPL:{label} skipped | Oppo_IP is not configured")
+            return
+
+        client = OppoStatusClient(
+            host=oppo_ip,
+            port=int(config.get("OPPO_Port", 23)),
+            timeout=float(config.get("timeout_oppo_conection", 3)),
+        )
+
+        result = client.query_playback_state()
+
+        print(
+            f"QPL:{label} | "
+            f"raw={result.raw_response!r} | "
+            f"status={result.status} | "
+            f"category={result.category.value} | "
+            f"ok={result.ok}"
+        )
+
+    except Exception as exc:
+        try:
+            if config.get("DebugLevel", 0) > 0:
+                print(f"QPL:{label} | ERROR {type(exc).__name__}: {exc}")
+        except Exception:
+            pass
+
 
 
 def sendnotifyremote(UDP_IP):
@@ -796,9 +829,11 @@ def playother(EmbySession,data,scripterx=False):
     else:
             response_data8 = playnormalfile(servidor,fichero,'0',EmbySession.config,nfs)
     response_play=json.loads(response_data8)
+    log_oppo_qpl_state(EmbySession.config, "after_playnormalfile")
     timer=0
     timeout=EmbySession.config["timeout_oppo_playitem"]
     response_data_gb = getglobalinfo(EmbySession.config)
+    log_oppo_qpl_state(EmbySession.config, "before_getglobalinfo_loop")
     while response_data_gb.find('"is_video_playing":false') > 0 and timer<timeout:
                 time.sleep(2)
                 response_data_gb = getglobalinfo(EmbySession.config)
@@ -838,6 +873,7 @@ def playother(EmbySession,data,scripterx=False):
 def playto_file(EmbySession,data,scripterx=False):
     EmbySession.playstate="Loading"
     EmbySession.currentdata=data
+    log_oppo_qpl_state(EmbySession.config, "playto_file_start")
     if EmbySession.config["DebugLevel"]>0: print("scripterx is " + str(scripterx))
     sendnotifyremote(EmbySession.config["Oppo_IP"])
     params = EmbySession.process_data(data)
@@ -1002,6 +1038,7 @@ def playto_file(EmbySession,data,scripterx=False):
             else:
                 response_data8 = playnormalfile(servidor,fichero,'0',EmbySession.config,nfs)
             response_play=json.loads(response_data8)
+            log_oppo_qpl_state(EmbySession.config, "after_playnormalfile")
             if response_play["success"]==True:
                 response_data_gb = getglobalinfo(EmbySession.config)
                 timer=0
@@ -1106,6 +1143,7 @@ def playto_file(EmbySession,data,scripterx=False):
                     logging.debug('getglobalinfo: %s',response_data_gb)
                     logging.debug('PlayingTime: %s de %s',str(playingtime["cur_time"]),str(total_time))
                     if EmbySession.config["DebugLevel"]>0: print('PlayingTime Final: ' + str(playingtime["cur_time"]) + " de " + str(total_time))
+                    log_oppo_qpl_state(EmbySession.config, "after_getglobalinfo_loop")
                     #positionticks=playingtime["cur_time"]*10000000
                     #if scripterx==False:
                     #if EmbySession.config["DebugLevel"]>0: print(EmbySession.currentdata['ItemIds'])
@@ -1117,6 +1155,7 @@ def playto_file(EmbySession,data,scripterx=False):
                     #if EmbySession.config["DebugLevel"]>0: print(EmbySession.currentdata['ItemIds'])
                     EmbySession.setitemplaybackposition(EmbySession.currentdata,positionticks,played)
                     #params["DeviceName"]=EmbySession.config["TV_DeviceName"]
+                    log_oppo_qpl_state(EmbySession.config, "before_return_to_tv")
                     if EmbySession.config["TV"]==True:
                         if EmbySession.config["DebugLevel"]>0: print("Cambiamos a la app anterior en la TV")
                         logging.info ("Cambiamos a la app anterior en la TV")

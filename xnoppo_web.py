@@ -76,7 +76,7 @@ def restart():
             pass
         print('fin restart')
         os._exit(0)
-        
+
 def save_config(config_file, config):
     with open(config_file, 'w') as fw:
         json.dump(config, fw, indent=4)
