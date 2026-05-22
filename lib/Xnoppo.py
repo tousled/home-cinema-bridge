@@ -299,10 +299,7 @@ def getfilelist(config,folder,nfs):
     headers = {}
     logging.debug(url)
     response = requests.get(url, headers=headers)
-    print(response)
     test=response.content
-    test2=response.json
-    print (test2)
     b = test.rsplit(b'\x01')
     files=[]
     file={}
@@ -327,12 +324,11 @@ def getfilelist(config,folder,nfs):
                 file={}
                 file["Id"]=indice
                 file["Foldername"]=e
-                if config["DebugLevel"]>0: print (e)
+                #if config["DebugLevel"]>0: print (e)
                 indice=indice+1
                 files.append(file)
     if config["DebugLevel"]==2:
        print("*** Fin getfilelist ***")
-       print(response.text)
     logging.debug("*** getfilelist Response: %s",response.text)
     return files
 

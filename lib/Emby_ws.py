@@ -20,6 +20,7 @@ import logging
 import json
 import time
 from .Emby_http import EmbyHttp
+from lib.playback_manager import PlaybackManager
 from .Xnoppo import *
 
 class xnoppo_ws(threading.Thread):
@@ -44,9 +45,34 @@ class xnoppo_ws(threading.Thread):
         threading.Thread.__init__(self)
         logging.info('Ws:Fin init\n')
 
-    def thread_function_play(self,data,scripterx=False):
+    def thread_function_play(self, data, scripterx=False):
         print("Thread Play: starting")
-        playto_file(self.EmbySession,data,scripterx)
+
+        # --- INICIO BLOQUE ROBUSTO (Gestión de Errores LG/OPPO) ---
+        try:
+            # 1. Instanciamos el Manager con la configuración actual
+            manager = PlaybackManager(self.ws_config)
+
+            # 2. Espera Activa: No intentamos reproducir hasta que el OPPO tenga red
+            # Esto soluciona el fallo cuando la TV LG envía la orden demasiado rápido
+            is_online = manager.wait_for_oppo_network()
+
+            if is_online:
+                # 3. Despertar / Handshake HDMI
+                # Enviamos tecla 'EJT' (Eject) o similar para asegurar que sale del reposo
+                # Usamos sendremotekey importado de .Xnoppo
+                if self.ws_config.get("DebugLevel", 0) > 0: print("Despertando OPPO...")
+                sendremotekey("EJT", self.ws_config)
+                time.sleep(2)  # Damos tiempo al OPPO para procesar el despertar
+            else:
+                print("ADVERTENCIA: OPPO no responde a la red. Intentando reproducción de todas formas...")
+
+        except Exception as e:
+            print(f"Error en el pre-chequeo de PlaybackManager: {e}")
+            # No bloqueamos el flujo si falla el manager, intentamos reproducir igual
+        # --- FIN BLOQUE ROBUSTO ---
+
+        playto_file(self.EmbySession, data, scripterx)
         self.recargar_config()
         print("Thread Play: finishing")
     
@@ -268,53 +294,52 @@ class xnoppo_ws(threading.Thread):
         elif command == 'PlayPause':
             sendremotekey('PAU',self.ws_config)
 
-    def on_message(ws, msg):
-        if ws.ws_config["DebugLevel"]>0: print ("Ws:Message Arrived:" + msg)
-        if ws.ws_config["DebugLevel"]>0: print (ws.EmbySession.playstate)
-        logging.debug ("Ws:Message Arrived: %s",msg)
-        ws.emby_state="Message Arrived:" + msg
+    def on_message(self, ws, msg):
+        if self.ws_config["DebugLevel"] > 0: print("Ws:Message Arrived:" + msg)
+        if self.ws_config["DebugLevel"] > 0: print(self.EmbySession.playstate)
+        logging.debug("Ws:Message Arrived: %s", msg)
+        self.emby_state = "Message Arrived:" + msg
         msg_json = json.loads(msg)
         msg_type = msg_json['MessageType']
         logging.debug("Json Message: %s", msg_json)
-        
+
         if msg_type == 'Play':
             data = msg_json['Data']
-            ws._play(data)
+            self._play(data)
 
         elif msg_type == 'Playstate':
             data = msg_json['Data']
-            ws._playstate(data)
+            self._playstate(data)
 
         elif msg_type == "UserDataChanged":
             data = msg_json['Data']
-            #ws._check_state(data,False)
+            # self._check_state(data,False)
 
         elif msg_type == "LibraryChanged":
             data = msg_json['Data']
-#          ws._library_changed(data)
+        #          self._library_changed(data)
 
         elif msg_type == "GeneralCommand":
             data = msg_json['Data']
-            ws._general_commands(data)
+            self._general_commands(data)
         elif msg_type == "Sessions":
             data = msg_json['Data']
-            ws._check_state(data,True)
+            self._check_state(data, True)
         else:
             logging.debug("WebSocket Message Type: %s", msg_type)
-            
-    def on_error(ws, error):
-        if ws.ws_config["DebugLevel"]>0: print (error)
-        ws.emby_state='Ws::Error'
-        
-    def on_close(ws):
-        if ws.ws_config["DebugLevel"]>0: print ("Ws:Connection Closed")
-        ws.emby_state='Closed'
 
-    def on_open(ws):
-       if ws.ws_config["DebugLevel"]>0: print('Ws:Open')
-       ws.emby_state='Opened'
-       b = ws.wsock.send('{"MessageType":"SessionsStart", "Data": "0,1500"}')
-       print(b)
+    def on_error(self, ws, error):
+        if self.ws_config["DebugLevel"] > 0: print(error)
+        self.emby_state = 'Ws::Error'
+
+    def on_close(self, ws, close_status_code=None, close_msg=None):
+        if self.ws_config["DebugLevel"] > 0: print("Ws:Connection Closed")
+        self.emby_state = 'Closed'
+
+    def on_open(self, ws):
+        if self.ws_config["DebugLevel"] > 0: print('Ws:Open')
+        self.emby_state = 'Opened'
+        self.wsock.send('{"MessageType":"SessionsStart", "Data": "0,1500"}')
 
     def run(self):
         self.EmbySession=EmbyHttp(self.ws_config)
@@ -332,14 +357,9 @@ class xnoppo_ws(threading.Thread):
                                     on_close=self.on_close)
         if self.ws_config["DebugLevel"]>0: print('Ws:Fin open ws\n')
         self.emby_state='Run'
-        a=1
         while not self.stop_websocket:
             self.wsock.run_forever(ping_interval=10)
-            if a==1:
-                self.wsock.send('{"MessageType":"SessionsStart", "Data": "0,1500"}')
-                a=2
-                print('Ws:Envio mensaje\n')
-            if self.ws_config["DebugLevel"]>0: print("after run forever")
+            if self.ws_config["DebugLevel"] > 0: print("after run forever")
             if self.stop_websocket:
                 break
             self.emby_state='On run_forever'

@@ -16,7 +16,6 @@ class EmbyHttp(threading.Thread):
     user_info=None
     playstate="Free"
     playedtitle=None
-    PlaySessionId=''
     server=None
     folder=None
     filename=None
@@ -81,7 +80,6 @@ class EmbyHttp(threading.Thread):
         params["Session_id"] = data.get("SessionID", None)
         params["DeviceName"] = data.get("DeviceName", "")
         params["Device_Id"] = data.get("Device_Id", "")
-        
 
         if self.config["DebugLevel"]>0:  print(params)
         return(params)
@@ -90,13 +88,6 @@ class EmbyHttp(threading.Thread):
 
         url = self.config.get("emby_server") + '/emby/Sessions/Playing/?format=json'
         params = self.process_data(data)
-
-        url2 = self.config.get("emby_server") + '/Items/' + str(params["item_id"]) + '/PlaybackInfo?format=json'
-        response_data2 = self.get_ulr_data(url2, self.config,self.user_info)
-        item_list2 = json.loads(response_data2)
-        print(item_list2)
-        self.PlaySessionId = item_list2["PlaySessionId"]
-
         session_info = self.user_info["SessionInfo"]
         message_data = {
                       "CanSeek": True,
@@ -109,7 +100,6 @@ class EmbyHttp(threading.Thread):
                       "IsMuted": False,
                       "PositionTicks": 0,
                       "PlayMethod": "DirectPlay",
-                      "PlaySessionId" : self.PlaySessionId,
                       "RepeatMode": "RepeatNone"
                         }
         headers = self.get_headers(self.user_info)
@@ -136,7 +126,6 @@ class EmbyHttp(threading.Thread):
                       "PositionTicks": positionticks,
                       "RunTimeTicks": totalticks,
                       "PlayMethod": "DirectPlay",
-                      "PlaySessionId" : self.PlaySessionId,
                       "RepeatMode": "RepeatNone",
                       "EventName": "timeupdate"
                         }
@@ -163,7 +152,6 @@ class EmbyHttp(threading.Thread):
                       "IsMuted": ismuted,
                       "PositionTicks": positionticks,
                       "PlayMethod": "DirectPlay",
-                      "PlaySessionId" : self.PlaySessionId,
                       "RepeatMode": "RepeatNone",
                       "EventName": "timeupdate"
                         }
@@ -363,9 +351,7 @@ class EmbyHttp(threading.Thread):
         return item_data
 
     def get_session_user_info(self,user_id,device_id):
-            #url = ('{server}/emby/Sessions?ControllableByUserId=' + str(user_id) + '&DeviceID=' + str(device_id))
-            url = ('{server}/emby/Sessions?DeviceiD=' + str(device_id))
-            time.sleep(1)
+            url = ('{server}/emby/Sessions?ControllableByUserId=' + str(user_id) + '&DeviceID=' + str(device_id))
             response_data = self.get_ulr_data(url, self.config, self.user_info)
             item_list = json.loads(response_data)
             logging.debug('Session_user_info Response Data: %s',response_data)

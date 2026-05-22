@@ -1,0 +1,5 @@
+websocket-client
+requests
+pywebostv
+onkyo-eiscp
+psutil

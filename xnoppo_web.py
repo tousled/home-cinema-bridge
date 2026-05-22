@@ -26,14 +26,64 @@ def thread_function(ws_object):
     ws_object.start()
     print("Thread: finishing")
 
+
+def watchdog_function(ws_object, config):
+    """
+    Vigila que el estado del script no se quede huérfano.
+    Comprueba 2 cosas:
+    1. Que el OPPO no se haya apagado a lo bruto.
+    2. Que no se quede atascado en "Iniciando" si la app de Emby se cuelga.
+    """
+    tiempo_atascado = 0  # Contador de segundos
+
+    while True:
+        time.sleep(5)  # Revisamos la salud cada 5 segundos
+        try:
+            if hasattr(ws_object, 'EmbySession') and hasattr(ws_object.EmbySession, 'playstate'):
+                estado_actual = ws_object.EmbySession.playstate
+
+                # Caso 1: El OPPO se ha apagado físicamente/desconectado de la red
+                if check_socket(config) != 0:
+                    if estado_actual not in ["Free", "Not_Connected", "Stopped"]:
+                        logging.warning(
+                            f"Watchdog: OPPO apagado o inalcanzable. Reseteando estado desde '{estado_actual}' a Libre.")
+                        ws_object.EmbySession.playstate = "Free"
+                        ws_object.EmbySession.playedtitle = ""
+                        ws_object.EmbySession.filename = ""
+                        tiempo_atascado = 0
+                    continue  # Saltamos a la siguiente comprobación en 5 seg
+
+                # Caso 2: El OPPO está encendido, pero la app de la TV se colgó y no manda estado
+                # Asumimos que los estados de transición se llaman "Iniciando" o "Starting"
+                if estado_actual in ["Iniciando", "Starting"]:
+                    tiempo_atascado += 5
+
+                    # Leemos el timeout de tu config (o usamos 60s por defecto)
+                    max_timeout = config.get("timeout_oppo_playitem", 60)
+
+                    if tiempo_atascado > max_timeout:
+                        logging.warning(
+                            f"Watchdog: Atascado en 'Iniciando' más de {max_timeout}s. App colgada. Reseteando a Libre.")
+                        ws_object.EmbySession.playstate = "Free"
+                        ws_object.EmbySession.playedtitle = ""
+                        ws_object.EmbySession.filename = ""
+                        tiempo_atascado = 0
+                else:
+                    # Si está "Reproduciendo" (Playing) o "Libre", reseteamos el cronómetro
+                    tiempo_atascado = 0
+
+        except Exception as e:
+            # Silenciamos errores para no saturar el log si las variables aún no existen
+            pass
+
 def restart():
         print('restart')
         try:
             emby_wsocket.stop()
         except:
-            sys.exit()
-        sys.exit()
+            pass
         print('fin restart')
+        os._exit(0)
         
 def save_config(config_file, config):
     with open(config_file, 'w') as fw:
@@ -1077,7 +1127,14 @@ if __name__ == "__main__":
     emby_wsocket.config_file=config_file
     emby_wsocket.ws_lang=lang
     x = threading.Thread(target=thread_function, args=(emby_wsocket,))
+    x.daemon = True
     x.start()
+
+    # Arrancamos el Perro Guardián para evitar estados congelados
+    w = threading.Thread(target=watchdog_function, args=(emby_wsocket, config))
+    w.daemon = True
+    w.start()
+
     espera=0
     estado_anterior=''
 

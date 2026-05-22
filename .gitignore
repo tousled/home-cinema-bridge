@@ -1,0 +1,34 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Logs
+*.log
+logs/
+emby_xnoppo_client_logging.log*
+xnoppo_web_logging.log*
+
+# Local config / secrets
+# Keep sanitized config template under version control
+!config.example.json
+
+config.json
+*.local.json
+*.secret.json
+.env
+.env.*
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+
+# Backups / temporales
+*.bak
+*.backup
+*.tmp
+*.tar.gz
+*.zip
