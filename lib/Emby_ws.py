@@ -155,7 +155,7 @@ class XnoppoWs(threading.Thread):
         elif cmd == 'SetSubtitleStreamIndex':
             params = self.EmbySession.process_data(self.EmbySession.currentdata)
             subs_index = self.EmbySession.get_xnoppo_subs_index(params["ControllingUserId"],params["item_id"],int(args['Index']))
-            setsubstrack(self.ws_config,subs_index)
+            set_subtitles_track(self.ws_config, subs_index)
             self.EmbySession.currentdata["SubtitleStreamIndex"]=int(args['Index'])
         #elif cmd == 'SetVolume'
 

@@ -632,26 +632,30 @@ def getmaxaudiotrack(config):
         index=index+1
     return(index)
 
-def setsubstrack(config,subs_index):
-    logging.debug("setsubstrack")
+def set_subtitles_track(config, subs_index):
+    logging.debug("set_subtitles_track")
     if config["DebugLevel"]>0: print(subs_index)
-    actual_track = getsubstrack(config)
+    actual_track = get_current_subtitle_track(config)
     if config["DebugLevel"]>0: print(actual_track)
     url = "http://" + config["Oppo_IP"] + ':436/setsubttmenulist?{"cur_index":'+ str(int(subs_index)) + '}'
     headers = {}
     logging.debug(url)
-    timeout=0
-    while actual_track!=subs_index or timeout==10:
-        response = requests.get(url, headers=headers)
-        logging.debug("*** setaudiotrack Response: %s",response.text)
-        if config["DebugLevel"]>0: print(response.text)
-        time.sleep(1)
-        actual_track = getsubstrack(config)
-        timeout=timeout+1
-    return (0)
 
-def getsubstrack(config):
-    logging.debug("getsubstrack")
+    timeout = 0
+    while actual_track != subs_index and timeout < 10:
+        response = requests.get(url, headers=headers)
+        logging.debug("*** set_subtitles_track Response: %s", response.text)
+
+        if config["DebugLevel"] == 2: print(response.text)
+
+        time.sleep(1)
+        actual_track = get_current_subtitle_track(config)
+        timeout = timeout + 1
+
+    return 0
+
+def get_current_subtitle_track(config):
+    logging.debug("get_current_subtitle_track")
     url = "http://" + config["Oppo_IP"] + ':436/getsubtitlemenulist?'
     headers = {}
     logging.debug(url)
@@ -805,10 +809,10 @@ def playother(EmbySession,data,scripterx=False):
         except:
                  pass
         try:
-          if EmbySession.config["DebugLevel"]>0: print('llamamos a setsubstrack')    
+          if EmbySession.config["DebugLevel"]>0: print('llamamos a set_subtitles_track')
           if EmbySession.config["DebugLevel"]>0: print(params["subtitle_stream_index"])
           subs_index = EmbySession.get_xnoppo_subs_index(params["ControllingUserId"],params["item_id"],params["subtitle_stream_index"])
-          setsubstrack(EmbySession.config,subs_index)
+          set_subtitles_track(EmbySession.config, subs_index)
         except:
           if EmbySession.config["DebugLevel"]>0: print('Error indicando el subtitulo')  
         EmbySession.playnow(data)
@@ -1048,11 +1052,11 @@ def playto_file(EmbySession,data,scripterx=False):
                     ispaused = False
                     ismuted = False
                     try:
-                        if EmbySession.config["DebugLevel"] > 0: print('llamamos a setsubstrack')
+                        if EmbySession.config["DebugLevel"] > 0: print('llamamos a set_subtitles_track')
                         if EmbySession.config["DebugLevel"] > 0: print(params["subtitle_stream_index"])
                         subs_index = EmbySession.get_xnoppo_subs_index(params["ControllingUserId"], params["item_id"],
                                                                        params["subtitle_stream_index"])
-                        setsubstrack(EmbySession.config, subs_index)
+                        set_subtitles_track(EmbySession.config, subs_index)
                     except:
                         if EmbySession.config["DebugLevel"] > 0: print('Error indicando el subtitulo')
                     while response_data_gb.find('"is_video_playing":true') > 0:
