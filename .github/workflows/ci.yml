@@ -28,13 +28,7 @@ jobs:
 
       - name: Compile Python files
         run: |
-          python -m py_compile \
-            app.py \
-            xnoppo_web.py \
-            lib/Xnoppo.py \
-            lib/Xnoppo_AVR.py \
-            lib/Xnoppo_TV.py \
-            lib/oppo_autoscript.py
+          git ls-files '*.py' | xargs python -m py_compile
 
       - name: Smoke import core modules
         run: |
@@ -45,4 +39,4 @@ jobs:
           import lib.oppo_autoscript
           import lib.devices.av.factory
           print("Core imports OK")
-          PY  
+          PY
