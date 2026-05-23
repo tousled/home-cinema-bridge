@@ -1,3 +1,13 @@
+# Upstream Xnoppo changelog
+
+This is the original changelog inherited from the upstream Xnoppo project by siberian-git:
+
+https://github.com/siberian-git/Xnoppo
+
+It is kept for historical reference only. The modernized fork changelog is maintained in [`CHANGELOG.md`](../CHANGELOG.md).
+
+---
+
 #version 0.1
  Añadida opcion de configuracion de la IP del televisor LG
  Fix problemas con las rutas de los ficheros de configuracion y log desde Emby
