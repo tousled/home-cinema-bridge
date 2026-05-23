@@ -707,13 +707,89 @@ def get_current_subtitle_track(config):
             if subs["selected"]==True:
                      return(subs["index"])
     except:
-        return(0)
+        return 0
+
 
 def sendremotekey(key,config):
     url = "http://" + config["Oppo_IP"] + ":436/sendremotekey?%7B%22key%22%3A%22" + key + "%22%7D"
     headers = {}
     response = requests.get(url, headers=headers)
     return response.text
+
+
+def parse_oppo_path(movie):
+    word = '/'
+    inicio = movie.find(word)
+    inicio = inicio + 1
+    final = movie.find(word, inicio, len(movie))
+    servidor = movie[inicio:final]
+
+    ultimo = final + 1
+    result = final + 1
+    while result > 0:
+        ultimo = result + 1
+        result = movie.find(word, ultimo, len(movie))
+
+    fichero = movie[ultimo:len(movie)]
+
+    final = final + 1
+    ultimo = ultimo - 1
+    carpeta = movie[final:ultimo]
+
+    return servidor, carpeta, fichero
+
+
+def resolve_server_is_nfs(config, device_list, server_name):
+    nfs = config["default_nfs"]
+
+    for device in device_list["devicelist"]:
+        if device["name"].upper() == server_name.upper():
+            return device["sub_type"] == "nfs"
+
+    return nfs
+
+
+def resolve_oppo_movie_path(movie, config):
+    logging.info('Ruta antes de los reemplazos por server: %s', movie)
+
+    for server in config["servers"]:
+        logging.info("Sustituimos %s por %s", server["Emby_Path"], server["Oppo_Path"])
+        movie = movie.replace(server["Emby_Path"], server["Oppo_Path"])
+        logging.info("Resultado : %s", movie)
+
+    logging.info('Ruta antes de los reemplazos de path: %s', movie)
+    movie = movie.replace('\\\\', '\\')
+    movie = movie.replace('\\', '/')
+    logging.info('Ruta despues: %s', movie)
+
+    return movie
+
+
+def resolve_mocked_item_info(emby_session, params, item_info):
+    file_path = item_info["Path"]
+    file_mockup = file_path[:len(file_path)-3] + 'txt'
+    logging.debug('File_mockup: %s', file_mockup)
+
+    if not os.path.isfile(file_mockup):
+        return item_info, False
+
+    with open(file_mockup, 'r') as f3:
+        newitem = f3.read().strip()
+
+    if emby_session.config["DebugLevel"] > 0:
+        print('File_encontrado - contenido: ' + newitem)
+    logging.debug('File_encontrado - contenido: %s', newitem)
+
+    if not newitem:
+        return item_info, True
+
+    mocked_item_info = emby_session.get_item_info2(
+        emby_session.user_info["User"]["Id"],
+        newitem,
+        params["media_source_id"]
+    )
+
+    return mocked_item_info, True
 
 def playother(EmbySession,data,scripterx=False):
     if EmbySession.config["DebugLevel"]>0: print("Inicio Replay")
@@ -722,91 +798,42 @@ def playother(EmbySession,data,scripterx=False):
     EmbySession.playstate="Replay"
     params = EmbySession.process_data(data)
     ItemInfo = EmbySession.get_item_info2(EmbySession.user_info["User"]["Id"],params["item_id"],params["media_source_id"])
-    FilePath = ItemInfo["Path"]
     logging.info("-----------------------------------------------------------")
     if scripterx:
-            if EmbySession.config["DebugLevel"]>0: print("Iniciando en el OPPO - X")
-            EmbySession.send_message2(params["Session_id"], EmbySession.lang["x_msg_init_oppo"])
+        if EmbySession.config["DebugLevel"] > 0: print("Iniciando en el OPPO - X")
+        EmbySession.send_message2(params["Session_id"], EmbySession.lang["x_msg_init_oppo"])
     else:
-            if EmbySession.config["DebugLevel"]>0: print("Iniciando en el OPPO")
-            EmbySession.send_user_message(params["ControllingUserId"], EmbySession.lang["x_msg_init_oppo"])
-    file_mockup = FilePath[:len(FilePath)-3] + 'txt'
-    logging.debug('File_mockup: %s', file_mockup)
+        if EmbySession.config["DebugLevel"] > 0: print("Iniciando en el OPPO")
+        EmbySession.send_user_message(params["ControllingUserId"], EmbySession.lang["x_msg_init_oppo"])
 
-    if os.path.isfile(file_mockup):
-        with open(file_mockup, 'r') as f3:
-            newitem = f3.read().strip()
+    ItemInfo, mock_file_exists = resolve_mocked_item_info(EmbySession, params, ItemInfo)
 
+    if not mock_file_exists and scripterx:
         if EmbySession.config["DebugLevel"] > 0:
-            print('File_encontrado - contenido: ' + newitem)
-        logging.debug('File_encontrado - contenido: %s', newitem)
+            print("Paramos reproduccion en el dispositivo")
+        EmbySession.playback_stop(params["Session_id"])
 
-        if newitem:
-            ItemInfo = EmbySession.get_item_info2(
-                EmbySession.user_info["User"]["Id"],
-                newitem,
-                params["media_source_id"]
-            )
-
-        movie = ItemInfo["Path"]
-        Container = ItemInfo["Container"]
-    else:
-        if scripterx:
-            if EmbySession.config["DebugLevel"] > 0:
-                print("Paramos reproduccion en el dispositivo")
-            EmbySession.playback_stop(params["Session_id"])
-
-        movie = ItemInfo["Path"]
-        Container = ItemInfo["Container"]
-    logging.info('Ruta antes de los reemplazos por server: %s', movie)
-    server_list=EmbySession.config["servers"]
-    for server in server_list:
-            server_data = {}
-            server_data["name"] = server["name"]
-            server_data["Emby_Path"] = server["Emby_Path"]
-            server_data["Oppo_Path"] = server["Oppo_Path"]
-            logging.info("Sustituimos " + server_data["Emby_Path"] + " por " + server_data["Oppo_Path"])
-            movie = movie.replace(server_data["Emby_Path"],server_data["Oppo_Path"])
-            logging.info("Resultado : %s",movie)
-    logging.info('Ruta antes de los reemplazos de path: %s', movie)
-    movie = movie.replace('\\\\','\\')
-    movie = movie.replace('\\','/')
-    logging.info('Ruta despues: %s',movie)
+    movie = ItemInfo["Path"]
+    Container = ItemInfo["Container"]
+    movie = resolve_oppo_movie_path(movie, EmbySession.config)
     logging.info("-----------------------------------------------------------")
-    word = '/'
-    inicio = movie.find(word)
-    inicio = inicio +1 
-    final = movie.find(word,inicio,len(movie))
-    servidor = movie[inicio:final]
+    servidor, carpeta, fichero = parse_oppo_path(movie)
     logging.info("Servidor               : %s", servidor)
-    ultimo=final+1
-    result=final+1
-    while result > 0:
-            ultimo=result+1
-            result=movie.find(word,ultimo,len(movie))
-    fichero=movie[ultimo:len(movie)]
-    logging.info("Fichero                : %s", fichero)   
-    final=final+1
-    ultimo=ultimo-1
-    carpeta=movie[final:ultimo]
-    logging.info("Carpeta                : %s",carpeta)
+    logging.info("Fichero                : %s", fichero)
+    logging.info("Carpeta                : %s", carpeta)
     logging.info("-----------------------------------------------------------")
     EmbySession.server = servidor
     EmbySession.folder = carpeta
     EmbySession.filename = fichero
     EmbySession.playedtitle = ItemInfo["Name"]
     response_data6f = getdevicelist(EmbySession.config)
-    device_list=json.loads(response_data6f)
-    if EmbySession.config["DebugLevel"]>0: print(device_list)
-    nfs=EmbySession.config["default_nfs"]
-    for device in device_list["devicelist"]:
-            if device["name"].upper()==servidor.upper():
-                if device["sub_type"]=="nfs":
-                    nfs=True
-                    break
-                else:
-                    nfs=False
-                    break
+    device_list = json.loads(response_data6f)
+
+    if EmbySession.config["DebugLevel"] > 0:
+        print(device_list)
+
+    nfs = resolve_server_is_nfs(EmbySession.config, device_list, servidor)
+
     if nfs:
         LoginNFS(EmbySession.config,servidor)
         response_data7 = mountSharedNFSFolder(servidor,carpeta,'','',EmbySession.config)
@@ -863,8 +890,7 @@ def playto_file(EmbySession,data,scripterx=False):
     if EmbySession.config["DebugLevel"]>0: print("scripterx is " + str(scripterx))
     sendnotifyremote(EmbySession.config["Oppo_IP"])
     params = EmbySession.process_data(data)
-    ItemInfo = EmbySession.get_item_info2(EmbySession.user_info["User"]["Id"],params["item_id"],params["media_source_id"])
-    FilePath = ItemInfo["Path"]
+    item_info = EmbySession.get_item_info2(EmbySession.user_info["User"]["Id"],params["item_id"],params["media_source_id"])
     if scripterx:
        if EmbySession.config["DebugLevel"]>0: print("Paramos reproduccion en el dispositivo")
        EmbySession.playback_stop(params["Session_id"])
@@ -902,57 +928,13 @@ def playto_file(EmbySession,data,scripterx=False):
                pass
         time.sleep(1)
         getsetupmenu(EmbySession.config)
-        file_mockup = FilePath[:len(FilePath)-3] + 'txt'
-        logging.debug('File_mockup: %s', file_mockup)
-
-        if os.path.isfile(file_mockup):
-            with open(file_mockup, 'r') as f3:
-                newitem = f3.read().strip()
-
-            if EmbySession.config["DebugLevel"] > 0:
-                print('File_encontrado - contenido: ' + newitem)
-            logging.debug('File_encontrado - contenido: %s', newitem)
-
-            if newitem:
-                ItemInfo = EmbySession.get_item_info2(
-                    EmbySession.user_info["User"]["Id"],
-                    newitem,
-                    params["media_source_id"]
-                )
-
-        movie = ItemInfo["Path"]
-        Container = ItemInfo["Container"]
+        item_info, _ = resolve_mocked_item_info(EmbySession, params, item_info)
+        movie = item_info["Path"]
+        container = item_info["Container"]
         logging.info("-----------------------------------------------------------")
-        logging.info('Ruta antes de los reemplazos por server: %s', movie)
-        server_list=EmbySession.config["servers"]
-        for server in server_list:
-            server_data = {}
-            server_data["name"] = server["name"]
-            server_data["Emby_Path"] = server["Emby_Path"]
-            server_data["Oppo_Path"] = server["Oppo_Path"]
-            logging.info("Sustituimos " + server_data["Emby_Path"] + " por " + server_data["Oppo_Path"])
-            movie = movie.replace(server_data["Emby_Path"],server_data["Oppo_Path"])
-            logging.info("Resultado : %s",movie)
-        logging.info('Ruta antes de los reemplazos de path: %s', movie)
-        movie = movie.replace('\\\\','\\')
-        movie = movie.replace('\\','/')
-        logging.info('Ruta despues: %s',movie)
+        movie = resolve_oppo_movie_path(movie, EmbySession.config)
         logging.info("-----------------------------------------------------------")
-        word = '/'
-        inicio = movie.find(word)
-        inicio = inicio +1 
-        final = movie.find(word,inicio,len(movie))
-        servidor = movie[inicio:final]
-        ultimo=final+1
-        result=final+1
-        while result > 0:
-            ultimo=result+1
-            result=movie.find(word,ultimo,len(movie))
-        fichero=movie[ultimo:len(movie)]
-
-        final=final+1
-        ultimo=ultimo-1
-        carpeta=movie[final:ultimo]
+        servidor, carpeta, fichero = parse_oppo_path(movie)
         logging.info("Servidor               : %s", servidor)
         logging.info("Fichero                : %s", fichero)   
         logging.info("Carpeta                : %s",carpeta)
@@ -960,7 +942,7 @@ def playto_file(EmbySession,data,scripterx=False):
         EmbySession.server = servidor
         EmbySession.folder = carpeta
         EmbySession.filename = fichero
-        EmbySession.playedtitle = ItemInfo["Name"]
+        EmbySession.playedtitle = item_info["Name"]
 
         if EmbySession.config["wait_nfs"]==True:
             text = 'sub_type":"nfs'
@@ -971,17 +953,12 @@ def playto_file(EmbySession,data,scripterx=False):
               response_data6f = getdevicelist(EmbySession.config)
               response_data_on = sendremotekey("QPW",EmbySession.config)
               logging.debug('Query POWER ON: %s',response_data_on)
-        device_list=json.loads(response_data6f)
-        if EmbySession.config["DebugLevel"]>0: print(device_list)
-        nfs=EmbySession.config["default_nfs"]
-        for device in device_list["devicelist"]:
-            if device["name"].upper()==servidor.upper():
-                if device["sub_type"]=="nfs":
-                    nfs=True
-                    break
-                else:
-                    nfs=False
-                    break
+        device_list = json.loads(response_data6f)
+        if EmbySession.config["DebugLevel"] > 0:
+            print(device_list)
+
+        nfs = resolve_server_is_nfs(EmbySession.config, device_list, servidor)
+
         if nfs:
             LoginNFS(EmbySession.config,servidor)
             getNfsShareFolderlist(EmbySession.config)
@@ -1001,7 +978,7 @@ def playto_file(EmbySession,data,scripterx=False):
             response_data7 = mountSharedFolder(servidor,carpeta,'','',EmbySession.config)
         response_mount=json.loads(response_data7)
         if response_mount["success"]==True:
-            if Container=='bluray':
+            if container=='bluray':
                 response_data8 = checkfolderhasbdmv(EmbySession.config,fichero,nfs)
             else:
                 response_data8 = playnormalfile(servidor,fichero,'0',EmbySession.config,nfs)
@@ -1210,7 +1187,7 @@ def playto_file(EmbySession,data,scripterx=False):
         else:
             EmbySession.send_user_message(params["ControllingUserId"], EmbySession.lang["x_msg_error_no_oppo"])
     if scripterx==True:
-        EmbySession.set_movie(params["Session_id"],params["item_id"],ItemInfo["Type"],ItemInfo["Name"])
+        EmbySession.set_movie(params["Session_id"],params["item_id"],item_info["Type"],item_info["Name"])
     EmbySession.playstate="Free"
     EmbySession.server = ""
     EmbySession.playedtitle = ""
