@@ -1,7 +1,6 @@
 # FILE FOR NAD
 import logging
-import subprocess
-import telnetlib
+from lib.devices.av.nad import NadAvReceiver
 
 def get_parametro2(texto,valor_actual):
     valor = input(texto+": ")
@@ -47,7 +46,7 @@ def add_hdmi(id, name, param, hdmi_list):
     hdmi_list_tmp.append(hdmi_input)
     return(hdmi_list_tmp)
 
-def get_hdmi_list(config):
+def get_hdmi_list():
     hdmi_intput_list=[]
     hdmi_intput_list=add_hdmi(1,"HDMI 1","Main.Source=1\n",hdmi_intput_list)
     hdmi_intput_list=add_hdmi(2,"HDMI 2","Main.Source=2\n",hdmi_intput_list)
@@ -60,7 +59,7 @@ def av_config(config):
         config['AV_Port']=23
         print("A continuacion se solicitaran los parametros relativos al AV, dejarlo en blanco y pulsar ENTER deja el parametro al valor actual")
         av_ip=get_parametro2("Introduzca el valor para la ip, valor actual " + config["AV_Ip"],config["AV_Ip"])
-        hdmi_list=get_hdmi_list(config)
+        hdmi_list=get_hdmi_list()
         encontrado=False
         param_hdmi=""
         param_name=""
@@ -101,34 +100,12 @@ def av_test(config):
     print("-----------------------------------------------------------")
 
 def av_check_power(config):
-    logging.info('Llamada a av_check_power')
-    host = config["AV_Ip"]
-    port = config['AV_Port']
+    return NadAvReceiver(config).power_on()
 
-    with telnetlib.Telnet(host, port) as session:
-        session.write(b"Main.Power=On\n")
-        session.write(b"ls\n")
-        session.write(b"exit\n")
-    return("OK")
-    
+
 def av_change_hdmi(config):
-    logging.info('Llamada a av_change_hdmi')
-    host = config["AV_Ip"]
-    port = config['AV_Port']
-    bsend = config["AV_Input"].encode()
-    with telnetlib.Telnet(host, port) as session:
-        session.write(bsend)
-        session.write(b"ls\n")
-        session.write(b"exit\n")
-    return("OK")
+    return NadAvReceiver(config).change_hdmi()
+
 
 def av_power_off(config):
-
-    logging.info('Llamada a av_power_off')
-    host = config["AV_Ip"]
-    port = config['AV_Port']
-    with telnetlib.Telnet(host, port) as session:
-        session.write(b"Main.Power=Off\n")
-        session.write(b"ls\n")
-        session.write(b"exit\n")
-    return("OK")
+    return NadAvReceiver(config).power_off()

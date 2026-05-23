@@ -1,7 +1,6 @@
 # FILE FOR DENON
-import logging
-import subprocess
-import telnetlib
+from lib.devices.av.factory import create_av_receiver
+
 
 def get_parametro2(texto,valor_actual):
     valor = input(texto+": ")
@@ -47,17 +46,6 @@ def add_hdmi(id, name, param, hdmi_list):
     hdmi_list_tmp.append(hdmi_input)
     return(hdmi_list_tmp)
 
-def get_hdmi_list(config):
-    hdmi_intput_list=[]
-    hdmi_intput_list=add_hdmi(1,"CD",'SICD\n',hdmi_intput_list)
-    hdmi_intput_list=add_hdmi(2,"DVD",'SIDVD\n',hdmi_intput_list)
-    hdmi_intput_list=add_hdmi(3,"Blu-ray (BD)",'SIBD\n',hdmi_intput_list)
-    hdmi_intput_list=add_hdmi(4,"TV AUDIO(TV)",'SITV\n',hdmi_intput_list)
-    hdmi_intput_list=add_hdmi(5,"CBL/SAT",'SISAT/CBL\n',hdmi_intput_list)
-    hdmi_intput_list=add_hdmi(6,"MEDIA PLAYER",'SIMPLAY\n',hdmi_intput_list)
-    hdmi_intput_list=add_hdmi(7,"GAME",'GAME\n',hdmi_intput_list)
-    
-    return(hdmi_intput_list)
 
 def av_config(config):
     es_correcto=False
@@ -65,7 +53,7 @@ def av_config(config):
         config['AV_Port']=23
         print("A continuacion se solicitaran los parametros relativos al AV, dejarlo en blanco y pulsar ENTER deja el parametro al valor actual")
         av_ip=get_parametro2("Introduzca el valor para la ip, valor actual " + config["AV_Ip"],config["AV_Ip"])
-        hdmi_list=get_hdmi_list(config)
+        hdmi_list=get_hdmi_list()
         encontrado=False
         param_hdmi=""
         param_name=""
@@ -106,34 +94,16 @@ def av_test(config):
     print("-----------------------------------------------------------")
 
 def av_check_power(config):
-    logging.info('Llamada a av_check_power')
-    host = config["AV_Ip"]
-    port = config['AV_Port']
+    return create_av_receiver(config).power_on()
 
-    with telnetlib.Telnet(host, port) as session:
-        session.write(b"ZMON\n")
-        session.write(b"ls\n")
-        session.write(b"exit\n")
-    return("OK")
-    
+
+def get_hdmi_list(config):
+    return create_av_receiver(config).get_hdmi_list()
+
+
 def av_change_hdmi(config):
-    logging.info('Llamada a av_change_hdmi')
-    host = config["AV_Ip"]
-    port = config['AV_Port']
-    bsend = config["AV_Input"].encode()
-    with telnetlib.Telnet(host, port) as session:
-        session.write(bsend)
-        session.write(b"ls\n")
-        session.write(b"exit\n")
-    return("OK")
+    return create_av_receiver(config).change_hdmi()
+
 
 def av_power_off(config):
-
-    logging.info('Llamada a av_power_off')
-    host = config["AV_Ip"]
-    port = config['AV_Port']
-    with telnetlib.Telnet(host, port) as session:
-        session.write(b"ZMOFF\n")
-        session.write(b"ls\n")
-        session.write(b"exit\n")
-    return("OK")
+    return create_av_receiver(config).power_off()
