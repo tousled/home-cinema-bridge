@@ -626,7 +626,7 @@ def getmaxaudiotrack(config):
     response = requests.get(url, headers=headers)
     logging.debug("*** getaudiotrack Response: %s",response.text)
     index=0
-    if config["DebugLevel"]>0: print(response.text)
+    if config["DebugLevel"]==2: print(response.text)
     audio_list=json.loads(response.text)
     for audio in audio_list["audio_list"]:
         index=index+1
