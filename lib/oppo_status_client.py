@@ -31,7 +31,7 @@ class OppoStatusClient:
     This client only reads status. It does not change playback state.
     """
 
-    ACTIVE_PLAYBACK_STATES = {"PLAY", "PAUSE", "DISC_MENU"}
+    ACTIVE_PLAYBACK_STATES = { "PLAY", "PAUSE", "DISC_MENU", "FFWD", "FREV", "SFWD", "SREV", "STEP"}
     IDLE_STATES = {"HOME_MENU", "SCREEN_SAVER", "MEDIA_CENTER", "NO_DISC"}
     TRANSITION_STATES = {"STOP", "OPEN", "CLOSE", "LOADING"}
 
