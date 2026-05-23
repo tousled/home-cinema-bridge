@@ -428,21 +428,16 @@ class EmbyHttp(threading.Thread):
         logging.debug('Item List Data User Views %s',item_list_data)
         return item_list_data["Items"]
     
-    def get_view_items(self,user_id,view_id):
-        url1 = ('{server}/emby/Users/' + str(user_id) + '/Items?parentId=' + str(view_id))
+    def get_view_items(self, view_id):
         url2 = ('{server}/emby/Items?parentId=' + str(view_id))
         response_data_item = self.get_ulr_data(url2, self.config, self.user_info)
         item_list_data = json.loads(response_data_item)
-        #if item_list_data!=None:
-            #logging.debug('Item List Data View Items %s',item_list_data)
         return item_list_data["Items"]
 
     def get_view_items2(self,user_id,view_id,item_id):
         url2 = ('{server}/emby/Users/' + str(user_id) + '/Items?parentId=' + str(view_id) + '&item_id=' + str(item_id))
         response_data_item = self.get_ulr_data(url2, self.config, self.user_info)
         item_list_data = json.loads(response_data_item)
-        #if item_list_data!=None:
-            #logging.debug('Item List Data View Items %s',item_list_data)
         return item_list_data["Items"]
 
     def get_info_from_device(self,device_id):
@@ -461,27 +456,26 @@ class EmbyHttp(threading.Thread):
             logging.info ("Client                 : %s " % item_data["Client"])
             logging.info ("DeviceName             : %s " % item_data["DeviceName"])
             logging.info ("-----------------------------------------------------------")
-        return(item)
+        return item
 
-    def is_item_in_library(self,ViewID,item_id):
+    def is_item_in_library(self,view_id,item_id):
         resultado=False
-        ItemList = self.get_view_items(self.user_info["User"]["Id"],ViewID)
-        for Item in ItemList:
-                #print(Item["Id"])
-                if Item["Id"]==item_id:
-                    return(True)
-        return(resultado)
+        item_list = self.get_view_items(view_id)
+        for item in item_list:
+            if item["Id"]==item_id:
+                return True
+        return resultado
 
-    def is_item_in_library2(self,ViewID,item_path):
+    def is_item_in_library2(self, view_id, item_path):
         resultado=False
-        MediaFolders = self.get_emby_selectablefolders()
-        for Folder in MediaFolders:
-            if Folder["Id"]==ViewID:
-                for SubFolder in Folder["SubFolders"]:
-                    resultado=item_path.startswith(SubFolder["Path"])
+        media_folders = self.get_emby_selectable_folders()
+        for folder in media_folders:
+            if folder["Id"]==view_id:
+                for subfolder in folder["SubFolders"]:
+                    resultado=item_path.startswith(subfolder["Path"])
                     if resultado:
-                        return(resultado)
-        return(resultado)
+                        return resultado
+        return resultado
 
     def get_emby_devices(self):
         url = ('{server}/emby/Devices?')
@@ -490,7 +484,7 @@ class EmbyHttp(threading.Thread):
         return(item_list)
 
 
-    def get_emby_selectablefolders(self):
+    def get_emby_selectable_folders(self):
         url = ('{server}/emby/Library/SelectableMediaFolders?')
         response_data = self.get_ulr_data(url, self.config, self.user_info)
         item_list = json.loads(response_data)
@@ -504,18 +498,19 @@ class EmbyHttp(threading.Thread):
                 audio_index=audio_index+1
                 if media["Index"]==index:
                     return(audio_index)
-        return(1)
+        return 1
 
     def get_xnoppo_subs_index(self,user_id,item_id,index):
         if index < 0:
-            return(0)
+            return 0
         else:
             response = self.get_item_info(user_id,item_id)
-            if self.config["DebugLevel"]>0: print(response["MediaStreams"])
+            if self.config["DebugLevel"]==2:
+                print(response["MediaStreams"])
             subs_index=0
             for media in response["MediaStreams"]:
                 if media["Type"]=="Subtitle":
                     subs_index=subs_index+1
                     if media["Index"]==index:
                         return(subs_index)
-            return(0)
+            return 0

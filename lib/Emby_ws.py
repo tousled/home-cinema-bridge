@@ -1,5 +1,5 @@
 #
-# Thanks for websocket-client library. 
+# Thanks for websocket-client library.
 #
 # Copyright 2018 Hiroki Ohtani.
 #
@@ -15,7 +15,7 @@
 
 
 import threading
-from websocket import WebSocketApp    
+from websocket import WebSocketApp
 import logging
 import json
 import time
@@ -23,7 +23,7 @@ from .Emby_http import EmbyHttp
 from lib.playback_manager import PlaybackManager
 from .Xnoppo import *
 
-class xnoppo_ws(threading.Thread):
+class XnoppoWs(threading.Thread):
     emby_state=''
     stop_websocket = False
     ws_config=None
@@ -75,14 +75,14 @@ class xnoppo_ws(threading.Thread):
         playto_file(self.EmbySession, data, scripterx)
         self.reload_config()
         print("Thread Play: finishing")
-    
+
     def set_lang(self,lang):
         self.ws_lang=lang
         self.EmbySession.lang=lang
 
     def reload_config(self):
         if self.ws_config["DebugLevel"]>0: print('Recargando Configuracion')
-        with open(self.config_file, 'r') as f:    
+        with open(self.config_file, 'r') as f:
                 config = json.load(f)
         f.close
         ## new options default config values
@@ -123,7 +123,7 @@ class xnoppo_ws(threading.Thread):
         self.ws_config=config
         self.EmbySession.config=config
         return(config)
-    
+
     def _play(self, data):
         command = data['PlayCommand']
         if command == 'PlayNow':
@@ -141,7 +141,7 @@ class xnoppo_ws(threading.Thread):
             else:
                 x = threading.Thread(target=self.thread_function_play, args=(data,))
                 x.start()
-            #playto_file(self.EmbySession,data)
+
     def _general_commands(self,data):
         cmd = data['Name']
         args = data['Arguments']
@@ -155,10 +155,10 @@ class xnoppo_ws(threading.Thread):
         elif cmd == 'SetSubtitleStreamIndex':
             params = self.EmbySession.process_data(self.EmbySession.currentdata)
             subs_index = self.EmbySession.get_xnoppo_subs_index(params["ControllingUserId"],params["item_id"],int(args['Index']))
-            setsubstrack(self.ws_config,subs_index)
+            set_subtitles_track(self.ws_config, subs_index)
             self.EmbySession.currentdata["SubtitleStreamIndex"]=int(args['Index'])
         #elif cmd == 'SetVolume'
-        
+
     def _check_state(self, data, sessions):
         if self.ws_config["MonitoredDevice"]:
             item_data = None
@@ -438,4 +438,3 @@ class xnoppo_ws(threading.Thread):
             self.emby_state='On run_forever'
 
         if self.ws_config["DebugLevel"]>0: print("WebSocketClient Stopped")
-

@@ -1,7 +1,8 @@
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from lib.config_manager import ensure_config_exists, is_configured
 import requests
-from lib.Emby_ws import xnoppo_ws
+from lib.Emby_ws import XnoppoWs
+from lib.Emby_http import EmbyHttp
 from lib.Xnoppo import *
 from lib.Xnoppo_TV import *
 import shutil
@@ -9,6 +10,7 @@ import threading
 import logging
 import logging.handlers
 import psutil
+import sys
 
 def get_version():
     return("2.03")
@@ -76,7 +78,7 @@ def restart():
             pass
         print('fin restart')
         os._exit(0)
-        
+
 def save_config(config_file, config):
     with open(config_file, 'w') as fw:
         json.dump(config, fw, indent=4)
@@ -357,14 +359,27 @@ def test_mount_path(config,servidor,carpeta):
 
 def test_emby(config):
     try:
-        EmbySession=EmbyHttp(config)
-        user_info = EmbySession.user_info
-        if user_info["SessionInfo"]["Id"]!="":
-            return("OK")
-        else:
-            return("FAILED")
-    except:
-            return("FAILED")
+        emby_config = {
+            "emby_server": config.get("emby_server", ""),
+            "user_name": config.get("user_name", ""),
+            "user_password": config.get("user_password", ""),
+        }
+
+        emby_session = EmbyHttp(emby_config)
+        user_info = emby_session.user_info or {}
+
+        session_id = user_info.get("SessionInfo", {}).get("Id", "")
+        access_token = user_info.get("AccessToken", "")
+        user_id = user_info.get("User", {}).get("Id", "")
+
+        if session_id or (access_token and user_id):
+            return "OK"
+
+        return "FAILED"
+
+    except Exception:
+        logging.exception("Error checking Emby connection")
+        return "FAILED"
 
 def test_oppo(config):
     result=check_socket(config)
@@ -403,7 +418,7 @@ def is_library_active(config,libraryname):
 
 def get_selectableFolders(config):
         EmbySession=EmbyHttp(config)
-        MediaFolders = EmbySession.get_emby_selectablefolders()
+        MediaFolders = EmbySession.get_emby_selectable_folders()
         servers=[]
         for Folder in MediaFolders:
             index=1
@@ -729,16 +744,17 @@ class MyServer(BaseHTTPRequestHandler):
         if self.path == '/check_emby':
                 content_length = int(self.headers['Content-Length']) # <--- Gets the size of data
                 post_data = self.rfile.read(content_length) # <--- Gets the data itself
-                config = json.loads(post_data.decode('utf-8'))       
+                config = json.loads(post_data.decode('utf-8'))
                 a = test_emby(config)
                 if a == 'OK':
+                    response_body = json.dumps(config).encode("utf-8")
                     self.send_response(200)
-                    self.send_header("Content-Length", len(config))
-                    self.send_header("Content-Type", "text/html")
+                    self.send_header("Content-Length", str(len(response_body)))
+                    self.send_header("Content-Type", "application/json")
                     self.send_header('Access-Control-Allow-Credentials', 'true')
                     self.send_header('Access-Control-Allow-Origin', '*')
                     self.end_headers()
-                    self.wfile.write(bytes(json.dumps(config),"utf-8"))
+                    self.wfile.write(response_body)
                     status = get_state()
                     if status["Playstate"]=="Not_Connected":
                         save_config(config_file, config)
@@ -1051,9 +1067,7 @@ class MyServer(BaseHTTPRequestHandler):
         if self.path == '/start_movie':
                 content_length = int(self.headers['Content-Length']) # <--- Gets the size of data
                 post_data = self.rfile.read(content_length) # <--- Gets the data itself
-                print(post_data)
                 data=json.loads(post_data.decode('utf-8'))
-                print(data)
                 emby_wsocket._play(data)
                 a = 'OK'
                 if a == 'OK':
@@ -1115,13 +1129,12 @@ if __name__ == "__main__":
        )
        logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s',datefmt='%d/%m/%Y %I:%M:%S %p',level=logging.DEBUG,handlers=[rfh])
 
-    config_file = str(ensure_config_exists())
     config = load_config(config_file, tv_path, av_path, lang_path)
     config_ready = is_configured(config)
     emby_wsocket = None
 
     if config_ready:
-        emby_wsocket = xnoppo_ws()
+        emby_wsocket = XnoppoWs()
         emby_wsocket.ws_config=config
         emby_wsocket.config_file=config_file
         emby_wsocket.ws_lang=lang
