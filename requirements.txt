@@ -3,3 +3,5 @@ requests
 pywebostv
 onkyo-eiscp
 psutil
+bscpylgtv
+wakeonlan
