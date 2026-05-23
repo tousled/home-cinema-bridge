@@ -1,16 +1,25 @@
+import json
+import os
+import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
+
+from lib.Xnoppo import check_socket, sendnotifyremote, getmainfirmwareversion, getdevicelist, getsetupmenu, OppoSignin, \
+    getglobalinfo, sendremotekey, LoginNFS, LoginSambaWithOutID, mountSharedNFSFolder, mountSharedFolder, \
+    umountSharedFolder, navigate_folder
+from lib.Xnoppo_AVR import get_hdmi_list, av_check_power, av_power_off, av_change_hdmi
+from lib.Xnoppo_TV import get_tv_key, tv_test_conn, get_tv_sources, tv_change_hdmi, tv_set_prev
 from lib.config_manager import ensure_config_exists, is_configured
 import requests
 from lib.Emby_ws import XnoppoWs
 from lib.Emby_http import EmbyHttp
-from lib.Xnoppo import *
-from lib.Xnoppo_TV import *
+
 import shutil
 import threading
 import logging
 import logging.handlers
 import psutil
 import sys
+from lib.devices.av.factory import is_migrated_av_model
 
 def get_version():
     return("2.03")
@@ -240,8 +249,8 @@ def update_version(config,vers_path,cwd):
     av_path = cwd + separador + 'web' + separador + 'libraries' + separador + 'AV' + separador
     if config["TV"]==True and config["TV_model"]!="":
        move_files(tv_path + config["TV_model"],lib_path)
-    if config["AV"]==True and config["AV_model"]!="":
-       move_files(av_path + config["AV_model"],lib_path)
+    if config["AV"] == True and config["AV_model"] != "" and not is_migrated_av_model(config["AV_model"]):
+        move_files(av_path + config["AV_model"], lib_path)
     resp = {}
     resp["version"]=last_version
     resp["file"]=last_version_file
@@ -852,7 +861,8 @@ class MyServer(BaseHTTPRequestHandler):
                 post_data = self.rfile.read(content_length) # <--- Gets the data itself
                 config = json.loads(post_data.decode('utf-8'))
                 save_config(config_file, config)
-                move_files(av_path + config["AV_model"],lib_path)
+                if config["AV"] == True and config["AV_model"] != "" and not is_migrated_av_model(config["AV_model"]):
+                    move_files(av_path + config["AV_model"], lib_path)
                 self.send_response(200)
                 self.send_header("Content-Length", len(config))
                 self.send_header("Content-Type", "text/html")
