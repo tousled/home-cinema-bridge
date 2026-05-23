@@ -809,12 +809,27 @@ def playother(EmbySession,data,scripterx=False):
         except:
                  pass
         try:
-          if EmbySession.config["DebugLevel"]>0: print('llamamos a set_subtitles_track')
-          if EmbySession.config["DebugLevel"]>0: print(params["subtitle_stream_index"])
-          subs_index = EmbySession.get_xnoppo_subs_index(params["ControllingUserId"],params["item_id"],params["subtitle_stream_index"])
-          set_subtitles_track(EmbySession.config, subs_index)
+            subtitle_stream_index = params.get("subtitle_stream_index")
+            if subtitle_stream_index is not None and int(subtitle_stream_index) >= 0:
+                if EmbySession.config["DebugLevel"] > 0:
+                    print('llamamos a set_subtitles_track')
+                    print(subtitle_stream_index)
+
+                subs_index = EmbySession.get_xnoppo_subs_index(
+                    params["ControllingUserId"],
+                    params["item_id"],
+                    subtitle_stream_index
+                )
+
+                if subs_index is not None and int(subs_index) >= 0:
+                    set_subtitles_track(EmbySession.config, subs_index)
+                elif EmbySession.config["DebugLevel"] > 0:
+                    print('No valid OPPO subtitle index found')
+            elif EmbySession.config["DebugLevel"] > 0:
+                print('No subtitle selected; skipping subtitle track selection')
         except:
-          if EmbySession.config["DebugLevel"]>0: print('Error indicando el subtitulo')  
+            if EmbySession.config["DebugLevel"] > 0:
+                print('Error indicando el subtitulo')
         EmbySession.playnow(data)
         EmbySession.currentdata=data
         EmbySession.playstate="Playing"
@@ -1052,13 +1067,27 @@ def playto_file(EmbySession,data,scripterx=False):
                     ispaused = False
                     ismuted = False
                     try:
-                        if EmbySession.config["DebugLevel"] > 0: print('llamamos a set_subtitles_track')
-                        if EmbySession.config["DebugLevel"] > 0: print(params["subtitle_stream_index"])
-                        subs_index = EmbySession.get_xnoppo_subs_index(params["ControllingUserId"], params["item_id"],
-                                                                       params["subtitle_stream_index"])
-                        set_subtitles_track(EmbySession.config, subs_index)
+                        subtitle_stream_index = params.get("subtitle_stream_index")
+                        if subtitle_stream_index is not None and int(subtitle_stream_index) >= 0:
+                            if EmbySession.config["DebugLevel"] > 0:
+                                print('llamamos a set_subtitles_track')
+                                print(subtitle_stream_index)
+
+                            subs_index = EmbySession.get_xnoppo_subs_index(
+                                params["ControllingUserId"],
+                                params["item_id"],
+                                subtitle_stream_index
+                            )
+
+                            if subs_index is not None and int(subs_index) >= 0:
+                                set_subtitles_track(EmbySession.config, subs_index)
+                            elif EmbySession.config["DebugLevel"] > 0:
+                                print('No valid OPPO subtitle index found')
+                        elif EmbySession.config["DebugLevel"] > 0:
+                            print('No subtitle selected; skipping subtitle track selection')
                     except:
-                        if EmbySession.config["DebugLevel"] > 0: print('Error indicando el subtitulo')
+                        if EmbySession.config["DebugLevel"] > 0:
+                            print('Error indicando el subtitulo')
                     while response_data_gb.find('"is_video_playing":true') > 0:
                         time.sleep(1)
                         if EmbySession.playstate != 'Replay':
