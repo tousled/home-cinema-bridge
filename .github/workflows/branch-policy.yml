@@ -1,0 +1,42 @@
+name: Branch policy
+
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+
+jobs:
+  validate-branch-flow:
+    name: Validate branch flow
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate PR source and target branches
+        run: |
+          echo "Base branch: ${{ github.base_ref }}"
+          echo "Head branch: ${{ github.head_ref }}"
+
+          BASE="${{ github.base_ref }}"
+          HEAD="${{ github.head_ref }}"
+
+          if [ "$BASE" = "main" ]; then
+            if [ "$HEAD" != "develop" ]; then
+              echo "Pull requests to main are only allowed from develop."
+              exit 1
+            fi
+          fi
+
+          if [ "$BASE" = "develop" ]; then
+            case "$HEAD" in
+              feature/*|bugfix/*|fix/*|refactor/*|hotfix/*|docs/*|chore/*)
+                echo "Valid source branch for develop."
+                ;;
+              *)
+                echo "Pull requests to develop must come from feature/*, bugfix/*, fix/*, refactor/*, hotfix/*, docs/* or chore/* branches."
+                exit 1
+                ;;
+            esac
+          fi
+
+          echo "Branch flow is valid."
