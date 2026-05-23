@@ -1,25 +1,38 @@
 from .denon import DenonAvReceiver
 from .marantz import MarantzAvReceiver
 from .nad import NadAvReceiver
+from .onkyo import OnkyoAvReceiver
+from .scripts import ScriptsAvReceiver
+from .yamaha import YamahaAvReceiver
 
 
-MIGRATED_AV_MODELS = {"DENON", "MARANTZ", "NAD"}
+AV_RECEIVERS = {
+    "DENON": DenonAvReceiver,
+    "MARANTZ": MarantzAvReceiver,
+    "NAD": NadAvReceiver,
+    "ONKYO": OnkyoAvReceiver,
+    "SCRIPTS": ScriptsAvReceiver,
+    "YAMAHA": YamahaAvReceiver,
+}
 
 
-def is_migrated_av_model(model):
-    return str(model or "").upper() in MIGRATED_AV_MODELS
+def normalize_av_model(model):
+    return str(model or "").upper()
+
+
+def get_supported_av_models():
+    return sorted(AV_RECEIVERS.keys())
+
+
+def is_supported_av_model(model):
+    return normalize_av_model(model) in AV_RECEIVERS
 
 
 def create_av_receiver(config):
-    model = str(config.get("AV_model", "")).upper()
+    model = normalize_av_model(config.get("AV_model"))
+    receiver_class = AV_RECEIVERS.get(model)
 
-    if model == "DENON":
-        return DenonAvReceiver(config)
+    if receiver_class is None:
+        raise ValueError(f"Unsupported AV model: {model}")
 
-    if model == "MARANTZ":
-        return MarantzAvReceiver(config)
-
-    if model == "NAD":
-        return NadAvReceiver(config)
-
-    raise ValueError(f"Unsupported migrated AV model: {model}")
+    return receiver_class(config)

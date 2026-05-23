@@ -19,7 +19,8 @@ import logging
 import logging.handlers
 import psutil
 import sys
-from lib.devices.av.factory import is_migrated_av_model
+from lib.devices.av.factory import get_supported_av_models
+
 
 def get_version():
     return("2.03")
@@ -125,7 +126,7 @@ def get_state():
         print(status)
         return(status)
 
-def load_config(config_file,tv_path,av_path,lang_path):
+def load_config(config_file, tv_path, lang_path):
 
         with open(config_file, 'r') as f:    
                 config = json.load(f)
@@ -187,9 +188,9 @@ def load_config(config_file,tv_path,av_path,lang_path):
         if config["AV"]=='False':
             config["AV"]=False;
         config["servers"]=server_list
-        config["tv_dirs"]=get_dir_folders(tv_path);
-        config["av_dirs"]=get_dir_folders(av_path);
-        config["langs"]=get_dir_folders(lang_path);
+        config["tv_dirs"]=get_dir_folders(tv_path)
+        config["av_dirs"] = get_supported_av_models()
+        config["langs"]=get_dir_folders(lang_path)
 
         return(config)
 
@@ -246,11 +247,9 @@ def update_version(config,vers_path,cwd):
     else:
        separador="/"
     tv_path = cwd + separador + 'web' + separador + 'libraries' + separador + 'TV' + separador
-    av_path = cwd + separador + 'web' + separador + 'libraries' + separador + 'AV' + separador
     if config["TV"]==True and config["TV_model"]!="":
        move_files(tv_path + config["TV_model"],lib_path)
-    if config["AV"] == True and config["AV_model"] != "" and not is_migrated_av_model(config["AV_model"]):
-        move_files(av_path + config["AV_model"], lib_path)
+
     resp = {}
     resp["version"]=last_version
     resp["file"]=last_version_file
@@ -507,7 +506,6 @@ class MyServer(BaseHTTPRequestHandler):
         resource_path=cwd + separador + 'web' + separador + 'resources' + separador
         html_path = cwd + separador + 'web' + separador
         tv_path = cwd + separador + 'web' + separador + 'libraries' + separador + 'TV' + separador
-        av_path = cwd + separador + 'web' + separador + 'libraries' + separador + 'AV' + separador
         lang_path = cwd + separador + 'web' + separador + 'lang' + separador
         vers_path = cwd + separador + 'versions' + separador
         
@@ -607,14 +605,14 @@ class MyServer(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-type", "application/json")
             self.end_headers()
-            a = load_config(config_file, tv_path, av_path, lang_path)
+            a = load_config(config_file, tv_path, lang_path)
             self.wfile.write(bytes(json.dumps(a),"utf-8"))  
             return(0)
         if self.path == '/xnoppo_config_lib':
             self.send_response(200)
             self.send_header("Content-type", "application/json")
             self.end_headers()
-            a = load_config(config_file, tv_path, av_path, lang_path)
+            a = load_config(config_file, tv_path, lang_path)
             carga_libraries(a)
             self.wfile.write(bytes(json.dumps(a),"utf-8"))
             return(0)
@@ -622,7 +620,7 @@ class MyServer(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-type", "application/json")
             self.end_headers()
-            a = load_config(config_file, tv_path, av_path, lang_path)
+            a = load_config(config_file, tv_path, lang_path)
             get_devices(a)
             self.wfile.write(bytes(json.dumps(a),"utf-8"))
             return(0)
@@ -630,7 +628,7 @@ class MyServer(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-type", "application/json")
             self.end_headers()
-            config = load_config(config_file, tv_path, av_path, lang_path)
+            config = load_config(config_file, tv_path, lang_path)
             a = check_version(config)
             self.wfile.write(bytes(json.dumps(a),"utf-8"))
             return(0)
@@ -638,7 +636,7 @@ class MyServer(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-type", "application/json")
             self.end_headers()
-            config = load_config(config_file, tv_path, av_path, lang_path)
+            config = load_config(config_file, tv_path, lang_path)
             a = update_version(config,vers_path,cwd)
             restart()
             self.wfile.write(bytes(json.dumps(a),"utf-8"))
@@ -661,7 +659,7 @@ class MyServer(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-type", "application/json")
             self.end_headers()
-            a = load_config(config_file, tv_path, av_path, lang_path)
+            a = load_config(config_file, tv_path, lang_path)
             get_selectableFolders(a)
             self.wfile.write(bytes(json.dumps(a),"utf-8"))
             return(0)
@@ -669,7 +667,7 @@ class MyServer(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-type", "application/json")
             self.end_headers()
-            config = load_config(config_file, tv_path, av_path, lang_path)
+            config = load_config(config_file, tv_path, lang_path)
             a = cargar_lang(lang_path + config["language"] + separador +'lang.js')
             self.wfile.write(bytes(json.dumps(a),"utf-8"))  
             return(0)
@@ -679,7 +677,7 @@ class MyServer(BaseHTTPRequestHandler):
             a = len('/send_key?sendkey=')
             b=get_data[a:len(get_data)]
             print(b)
-            config = load_config(config_file, tv_path, av_path, lang_path)
+            config = load_config(config_file, tv_path, lang_path)
             sendnotifyremote(config["Oppo_IP"])
             result=check_socket(config)
             if b=='PON':
@@ -709,7 +707,7 @@ class MyServer(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-type", "text")
             self.end_headers()
-            config = load_config(config_file, tv_path, av_path, lang_path)
+            config = load_config(config_file, tv_path, lang_path)
             a = leer_img(cwd + separador + 'emby_xnoppo_client_logging.log')
             self.wfile.write(bytes(a))  
             return(0)
@@ -804,7 +802,7 @@ class MyServer(BaseHTTPRequestHandler):
                 content_length = int(self.headers['Content-Length']) # <--- Gets the size of data
                 post_data = self.rfile.read(content_length) # <--- Gets the data itself
                 server = json.loads(post_data.decode('utf-8'))
-                config = load_config(config_file, tv_path, av_path, lang_path)
+                config = load_config(config_file, tv_path, lang_path)
                 a = test_path(config,server)
                 if a == 'OK':
                     self.send_response(200)
@@ -828,7 +826,7 @@ class MyServer(BaseHTTPRequestHandler):
                 post_data = self.rfile.read(content_length) # <--- Gets the data itself
                 path_obj = json.loads(post_data.decode('utf-8'))
                 path = path_obj["path"]
-                config = load_config(config_file, tv_path, av_path, lang_path)
+                config = load_config(config_file, tv_path, lang_path)
                 a = navigate_folder(path,config)
                 a_json=json.dumps(a)
                 print(len(a_json))
@@ -861,8 +859,7 @@ class MyServer(BaseHTTPRequestHandler):
                 post_data = self.rfile.read(content_length) # <--- Gets the data itself
                 config = json.loads(post_data.decode('utf-8'))
                 save_config(config_file, config)
-                if config["AV"] == True and config["AV_model"] != "" and not is_migrated_av_model(config["AV_model"]):
-                    move_files(av_path + config["AV_model"], lib_path)
+
                 self.send_response(200)
                 self.send_header("Content-Length", len(config))
                 self.send_header("Content-Type", "text/html")
@@ -1139,7 +1136,7 @@ if __name__ == "__main__":
        )
        logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s',datefmt='%d/%m/%Y %I:%M:%S %p',level=logging.DEBUG,handlers=[rfh])
 
-    config = load_config(config_file, tv_path, av_path, lang_path)
+    config = load_config(config_file, tv_path, lang_path)
     config_ready = is_configured(config)
     emby_wsocket = None
 
