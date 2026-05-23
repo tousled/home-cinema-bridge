@@ -511,7 +511,8 @@ class EmbyHttp(threading.Thread):
             return(0)
         else:
             response = self.get_item_info(user_id,item_id)
-            if self.config["DebugLevel"]>0: print(response["MediaStreams"])
+            if self.config["DebugLevel"]==2:
+                print(response["MediaStreams"])
             subs_index=0
             for media in response["MediaStreams"]:
                 if media["Type"]=="Subtitle":
