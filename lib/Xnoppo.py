@@ -1,5 +1,4 @@
 import logging
-import telnetlib
 import urllib.parse
 import requests
 import json
@@ -245,22 +244,6 @@ def LoginNFS(config,server):
     logging.debug("*** LoginNFS Response: %s",response.text)
     return response.text
 
-def umountSharedFolder(config):
-    logging.info('*** umountSharedFolder ***')
-    host = config["Oppo_IP"]
-    port = 23
-    user='root'
-    try:
-        session = telnetlib.Telnet(host, port, timeout = 10)
-        session.read_until(b"login: ",10)
-        session.write(user.encode('ascii') + b"\n")
-        session.write(b"umount /mnt/cifs1\n")
-        session.write(b"ls\n")
-        session.write(b"exit\n")
-        if config["DebugLevel"]>0: print(session.read_all().decode('ascii'))
-        return("OK")
-    except:
-        return("ERROR unmounting")
 
 def playnormalfile(server,filename,index,config,nfs):
     if config["DebugLevel"]==2:

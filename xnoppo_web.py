@@ -5,7 +5,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from lib.Xnoppo import check_socket, sendnotifyremote, getmainfirmwareversion, getdevicelist, getsetupmenu, OppoSignin, \
     getglobalinfo, sendremotekey, LoginNFS, LoginSambaWithOutID, mountSharedNFSFolder, mountSharedFolder, \
-    umountSharedFolder, navigate_folder
+    navigate_folder
+from lib.oppo_autoscript import umount_shared_folder
 from lib.Xnoppo_AVR import get_hdmi_list, av_check_power, av_power_off, av_change_hdmi
 from lib.Xnoppo_TV import get_tv_key, tv_test_conn, get_tv_sources, tv_change_hdmi, tv_set_prev
 from lib.config_manager import ensure_config_exists, is_configured
@@ -356,7 +357,7 @@ def test_mount_path(config,servidor,carpeta):
         response=json.loads(response_mount)
         #print(response)
         if config["Autoscript"]==True:
-            result=umountSharedFolder(config)
+            umount_shared_folder(config)
         if response["success"]==True:
             a = "OK"
         else:
@@ -730,7 +731,6 @@ class MyServer(BaseHTTPRequestHandler):
         resource_path=cwd + separador + 'web' + separador + 'resources' + separador
         html_path = cwd + separador + 'web' + separador
         tv_path = cwd + separador + 'web' + separador + 'libraries' + separador + 'TV' + separador
-        av_path = cwd + separador + 'web' + separador + 'libraries' + separador + 'AV' + separador
         lib_path = cwd + separador + 'lib' + separador
         lang_path = cwd + separador + 'web' + separador + 'lang' + separador
         vers_path = cwd + separador + 'versions' + separador
@@ -1105,11 +1105,10 @@ if __name__ == "__main__":
     resource_path=cwd + separador + 'web' + separador + 'resources' + separador
     html_path = cwd + separador + 'web' + separador
     tv_path = cwd + separador + 'web' + separador + 'libraries' + separador + 'TV' + separador
-    av_path = cwd + separador + 'web' + separador + 'libraries' + separador + 'AV' + separador
     lib_path = cwd + separador + 'lib' + separador
     lang_path = cwd + separador + 'web' + separador + 'lang' + separador
     vers_path = cwd + separador + 'versions' + separador
-    config = load_config(config_file,tv_path,av_path,lang_path)
+    config = load_config(config_file,tv_path,lang_path)
     logfile=cwd + separador + "emby_xnoppo_client_logging.log"
     lang = cargar_lang(lang_path + config["language"] + separador +'lang.js')
 
