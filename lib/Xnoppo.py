@@ -11,16 +11,22 @@ from .Xnoppo_AVR import av_check_power, av_power_off, av_change_hdmi
 from .Xnoppo_TV import tv_change_hdmi, tv_set_prev
 from .oppo_status_client import OppoStatusClient
 
+_qpl_last_observed_states = {}
 
-def log_oppo_qpl_state(config, label):
+
+def reset_qpl_observation_state():
+    _qpl_last_observed_states.clear()
+
+def log_oppo_qpl_state(config, label, changes_only=False):
     try:
-        if config.get("DebugLevel", 0) <= 0:
-            return
+        debug_level = int(config.get("DebugLevel", 0))
+        if debug_level <= 0:
+            return None
 
         oppo_ip = config.get("Oppo_IP")
         if not oppo_ip:
             print(f"QPL:{label} skipped | Oppo_IP is not configured")
-            return
+            return None
 
         client = OppoStatusClient(
             host=oppo_ip,
@@ -30,6 +36,15 @@ def log_oppo_qpl_state(config, label):
 
         result = client.query_playback_state()
 
+        if changes_only and debug_level < 2:
+            current_state = (result.status, result.category.value, result.ok)
+            previous_state = _qpl_last_observed_states.get(label)
+
+            if previous_state == current_state:
+                return result
+
+            _qpl_last_observed_states[label] = current_state
+
         print(
             f"QPL:{label} | "
             f"raw={result.raw_response!r} | "
@@ -38,12 +53,15 @@ def log_oppo_qpl_state(config, label):
             f"ok={result.ok}"
         )
 
+        return result
+
     except Exception as exc:
         try:
-            if config.get("DebugLevel", 0) > 0:
-                print(f"QPL:{label} | ERROR {type(exc).__name__}: {exc}")
+            if config.get("DebugLevel", 0) > 0: print(f"QPL:{label} | ERROR {type(exc).__name__}: {exc}")
         except Exception:
             pass
+
+        return None
 
 def log_oppo_qpl_state_sequence(config, label, samples=5, interval=1):
     try:
@@ -678,6 +696,7 @@ def sendremotekey(key,config):
 def playother(EmbySession,data,scripterx=False):
     if EmbySession.config["DebugLevel"]>0: print("Inicio Replay")
     logging.info("Con el OPPO iniciado le decimos que cambie de pelicula")
+    reset_qpl_observation_state()
     EmbySession.playstate="Replay"
     params = EmbySession.process_data(data)
     ItemInfo = EmbySession.get_item_info2(EmbySession.user_info["User"]["Id"],params["item_id"],params["media_source_id"])
@@ -782,11 +801,11 @@ def playother(EmbySession,data,scripterx=False):
     timer=0
     timeout=EmbySession.config["timeout_oppo_playitem"]
     response_data_gb = getglobalinfo(EmbySession.config)
-    log_oppo_qpl_state(EmbySession.config, "before_getglobalinfo_loop")
+    log_oppo_qpl_state(EmbySession.config, "before_getglobalinfo_loop", changes_only=True)
     while response_data_gb.find('"is_video_playing":false') > 0 and timer<timeout:
                 time.sleep(2)
                 response_data_gb = getglobalinfo(EmbySession.config)
-                log_oppo_qpl_state(EmbySession.config, "before_getglobalinfo_loop")
+                log_oppo_qpl_state(EmbySession.config, "before_getglobalinfo_loop", changes_only=True)
                 timer=timer+1
                 logging.debug('getglobalinfo: %s',response_data_gb)
     if timer>=timeout:
@@ -838,6 +857,7 @@ def playother(EmbySession,data,scripterx=False):
 def playto_file(EmbySession,data,scripterx=False):
     EmbySession.playstate="Loading"
     EmbySession.currentdata=data
+    reset_qpl_observation_state()
     log_oppo_qpl_state(EmbySession.config, "playto_file_start")
     if EmbySession.config["DebugLevel"]>0: print("scripterx is " + str(scripterx))
     sendnotifyremote(EmbySession.config["Oppo_IP"])
@@ -988,13 +1008,13 @@ def playto_file(EmbySession,data,scripterx=False):
             log_oppo_qpl_state(EmbySession.config, "after_playnormalfile")
             if response_play["success"]==True:
                 response_data_gb = getglobalinfo(EmbySession.config)
-                log_oppo_qpl_state(EmbySession.config, "before_getglobalinfo_loop")
+                log_oppo_qpl_state(EmbySession.config, "before_getglobalinfo_loop", changes_only=True)
                 timer=0
                 timeout=EmbySession.config["timeout_oppo_playitem"]
                 while response_data_gb.find('"is_video_playing":false') > 0 and timer<timeout:
                         time.sleep(1)
                         response_data_gb = getglobalinfo(EmbySession.config)
-                        log_oppo_qpl_state(EmbySession.config, "before_getglobalinfo_loop")
+                        log_oppo_qpl_state(EmbySession.config, "before_getglobalinfo_loop", changes_only=True)
                         timer=timer+1
                         logging.debug('getglobalinfo: %s',response_data_gb)
                         if scripterx:
@@ -1051,7 +1071,7 @@ def playto_file(EmbySession,data,scripterx=False):
                         except:
                             pass
                     response_data_gb = getglobalinfo(EmbySession.config)
-                    log_oppo_qpl_state(EmbySession.config, "before_getglobalinfo_loop")
+                    log_oppo_qpl_state(EmbySession.config, "before_getglobalinfo_loop", changes_only=True)
                     cur_time=0
                     total_time=0
                     playingtime={}
@@ -1092,7 +1112,7 @@ def playto_file(EmbySession,data,scripterx=False):
                         time.sleep(1)
                         if EmbySession.playstate != 'Replay':
                             response_data_gb = getglobalinfo(EmbySession.config)
-                            log_oppo_qpl_state(EmbySession.config, "before_getglobalinfo_loop")
+                            log_oppo_qpl_state(EmbySession.config, "before_getglobalinfo_loop", changes_only=True)
                             if response_data_gb.find('"is_video_playing":true') > 0:
                                 response_playing_time = getplayingtime(EmbySession.config)
                                 playingtime = json.loads(response_playing_time)
