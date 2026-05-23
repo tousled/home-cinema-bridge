@@ -4,7 +4,9 @@ All notable changes to this project will be documented in this file.
 
 The format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versioning follows semantic versioning where practical.
 
-## [1.2.0] - 2026-05-23
+> This fork is currently in pre-1.0 modernization. Versions `0.x` may introduce breaking changes while the legacy architecture is progressively replaced.
+
+## [0.4.0] - 2026-05-23
 
 ### Added
 
@@ -50,7 +52,7 @@ The format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.
 - TV still uses the legacy TV implementation path and will be migrated separately.
 - OPPO HTTP calls such as `getglobalinfo()` and `getplayingtime()` still need future hardening for the case where the OPPO is powered off or unreachable.
 
-## [1.1.1] - 2026-05-23
+## [0.3.0] - 2026-05-23
 
 ### Added
 
@@ -98,7 +100,7 @@ The format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.
 
 - Experimental segment-aware progress tracking was discarded because it introduced fragile heuristics. Future progress/timeline hardening should use a dedicated tested tracker instead of adding more logic inside `playto_file`.
 
-## [1.1.0] - 2026-05-22
+## [0.2.0] - 2026-05-22
 
 ### Added
 
@@ -132,7 +134,17 @@ The format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.
 - Validated Emby WebSocket startup after real config was copied into the Docker volume.
 - Validated playback from Docker runtime.
 
-## [1.0.0] - 2026-05-22
+## [0.1.1] - 2026-05-22
+
+### Changed
+
+- Sanitized runtime debug logs to avoid exposing sensitive values during troubleshooting.
+
+### Notes
+
+- This was a small maintenance release on top of the clean fork baseline.
+
+## [0.1.0] - 2026-05-22
 
 ### Added
 
