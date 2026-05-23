@@ -59,15 +59,15 @@ app.controller('xnoppo_config', function($scope, $http)
 			$scope.config.AV_model=$scope.selectedTV;
 			console.log($scope.config.AV_model);
 			$http.post("save_config", $scope.config)
-            .then(function(res){
-              console.log(res);
-            });;
-			if ($scope.selectedTV!='SCRIPTS') {
-				$scope.av_getsources_button = $scope.lang.av_getsources_button_test;
-				$scope.hide_spin_source = false;
-				$scope.move_av();
-				setTimeout(() => {  $scope.get_av_sources(); }, 2000);
-			}
+				.then(function(res){
+				  console.log(res);
+
+				  if ($scope.selectedTV!='SCRIPTS') {
+					$scope.av_getsources_button = $scope.lang.av_getsources_button_test;
+					$scope.hide_spin_source = false;
+					$scope.get_av_sources();
+				  }
+				});
 			};
 		
 		};
@@ -99,11 +99,7 @@ app.controller('xnoppo_config', function($scope, $http)
             .then(function(res){
               console.log(res);
             })};
-	$scope.move_av = function(){
-          $http.post("move_av", $scope.config)
-            .then(function(res){
-              console.log(res);
-            })};
+
 	$scope.tv_test_conn = function () {
 			$scope.tv_test_button = $scope.lang.tv_test_button_test;
 			$scope.hide_spin = false;

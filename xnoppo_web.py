@@ -416,7 +416,7 @@ def carga_libraries(config):
                      library["Active"]=lib["Active"]
             libraries.append(library)
         config["Libraries"]=libraries
-        return(0)
+        return 0
     except:
         return(1)
 def is_library_active(config,libraryname):
@@ -476,7 +476,7 @@ def move_files(src, dest):
         full_file_name = os.path.join(src, file_name)
         if os.path.isfile(full_file_name):
             shutil.copy(full_file_name, dest)
-    return(0)
+    return 0
 
 def get_devices(config):
     try:
@@ -517,98 +517,98 @@ class MyServer(BaseHTTPRequestHandler):
             self.send_header("Content-type", "text/html")
             self.end_headers()
             self.wfile.write(bytes(i,"utf-8"))
-            return(0)
+            return 0
         if self.path == '/oppo_conf.html':
             self.send_response(200)
             self.send_header("Content-type", "text/html")
             self.end_headers()
             i = leer_file(html_path + 'oppo_conf.html')
             self.wfile.write(bytes(i,"utf-8"))
-            return(0)
+            return 0
         if self.path == '/lib_conf.html':
             self.send_response(200)
             self.send_header("Content-type", "text/html")
             self.end_headers()
             i = leer_file(html_path + 'lib_conf.html')
             self.wfile.write(bytes(i,"utf-8"))
-            return(0)
+            return 0
         if self.path == '/path_conf.html':
             self.send_response(200)
             self.send_header("Content-type", "text/html")
             self.end_headers()
             i = leer_file(html_path + 'path_conf.html')
             self.wfile.write(bytes(i,"utf-8"))
-            return(0)
+            return 0
         if self.path == '/tv_conf.html':
             self.send_response(200)
             self.send_header("Content-type", "text/html")
             self.end_headers()
             i = leer_file(html_path + 'tv_conf.html')
             self.wfile.write(bytes(i,"utf-8"))
-            return(0)
+            return 0
         if self.path == '/av_conf.html':
             self.send_response(200)
             self.send_header("Content-type", "text/html")
             self.end_headers()
             i = leer_file(html_path + 'av_conf.html')
             self.wfile.write(bytes(i,"utf-8"))
-            return(0)
+            return 0
         if self.path == '/other_conf.html':
             self.send_response(200)
             self.send_header("Content-type", "text/html")
             self.end_headers()
             i = leer_file(html_path + 'other_conf.html')
             self.wfile.write(bytes(i,"utf-8"))
-            return(0)
+            return 0
         if self.path == '/status.html':
             self.send_response(200)
             self.send_header("Content-type", "text/html")
             self.end_headers()
             i = leer_file(html_path + 'status.html')
             self.wfile.write(bytes(i,"utf-8"))
-            return(0)
+            return 0
         if self.path == '/help.html':
             self.send_response(200)
             self.send_header("Content-type", "text/html")
             self.end_headers()
             i = leer_file(html_path + 'help.html')
             self.wfile.write(bytes(i,"utf-8"))
-            return(0)
+            return 0
         if self.path == '/remote.html':
             i = leer_file(html_path + 'remote.html')
             self.send_response(200)
             self.send_header("Content-type", "text/html")
             self.end_headers()
             self.wfile.write(bytes(i,"utf-8"))
-            return(0)
+            return 0
         if self.path == '/android-chrome-36x36.png':
             self.send_response(200)
             self.send_header("Content-type", "text/html")
             self.end_headers()
             i = leer_img(resource_path + 'android-chrome-36x36.png')
             self.wfile.write(bytes(i))
-            return(0)
+            return 0
         if self.path == '/av-receiver-icon-2.jpg':
             self.send_response(200)
             self.send_header("Content-type", "text/html")
             self.end_headers()
             i = leer_img(resource_path + 'av-receiver-icon-2.jpg')
             self.wfile.write(bytes(i))
-            return(0)
+            return 0
         if self.path == '/dragon.png':
             self.send_response(200)
             self.send_header("Content-type", "text/html")
             self.end_headers()
             i = leer_img(resource_path + 'dragon.png')
             self.wfile.write(bytes(i))
-            return(0)
+            return 0
         if self.path == '/xnoppo_config':
             self.send_response(200)
             self.send_header("Content-type", "application/json")
             self.end_headers()
             a = load_config(config_file, tv_path, lang_path)
             self.wfile.write(bytes(json.dumps(a),"utf-8"))  
-            return(0)
+            return 0
         if self.path == '/xnoppo_config_lib':
             self.send_response(200)
             self.send_header("Content-type", "application/json")
@@ -616,7 +616,7 @@ class MyServer(BaseHTTPRequestHandler):
             a = load_config(config_file, tv_path, lang_path)
             carga_libraries(a)
             self.wfile.write(bytes(json.dumps(a),"utf-8"))
-            return(0)
+            return 0
         if self.path == '/xnoppo_config_dev':
             self.send_response(200)
             self.send_header("Content-type", "application/json")
@@ -624,7 +624,7 @@ class MyServer(BaseHTTPRequestHandler):
             a = load_config(config_file, tv_path, lang_path)
             get_devices(a)
             self.wfile.write(bytes(json.dumps(a),"utf-8"))
-            return(0)
+            return 0
         if self.path == '/check_version':
             self.send_response(200)
             self.send_header("Content-type", "application/json")
@@ -632,7 +632,7 @@ class MyServer(BaseHTTPRequestHandler):
             config = load_config(config_file, tv_path, lang_path)
             a = check_version(config)
             self.wfile.write(bytes(json.dumps(a),"utf-8"))
-            return(0)
+            return 0
         if self.path == '/update_version':
             self.send_response(200)
             self.send_header("Content-type", "application/json")
@@ -641,14 +641,14 @@ class MyServer(BaseHTTPRequestHandler):
             a = update_version(config,vers_path,cwd)
             restart()
             self.wfile.write(bytes(json.dumps(a),"utf-8"))
-            return(0)
+            return 0
         if self.path == '/get_state':
             self.send_response(200)
             self.send_header("Content-type", "application/json")
             self.end_headers()
             a = get_state()
             self.wfile.write(bytes(json.dumps(a),"utf-8"))
-            return(0)
+            return 0
         if self.path == '/restart':
             self.send_response(200)
             self.send_header("Content-type", "text/html")
@@ -663,7 +663,7 @@ class MyServer(BaseHTTPRequestHandler):
             a = load_config(config_file, tv_path, lang_path)
             get_selectableFolders(a)
             self.wfile.write(bytes(json.dumps(a),"utf-8"))
-            return(0)
+            return 0
         if self.path == '/lang':
             self.send_response(200)
             self.send_header("Content-type", "application/json")
@@ -671,7 +671,7 @@ class MyServer(BaseHTTPRequestHandler):
             config = load_config(config_file, tv_path, lang_path)
             a = cargar_lang(lang_path + config["language"] + separador +'lang.js')
             self.wfile.write(bytes(json.dumps(a),"utf-8"))  
-            return(0)
+            return 0
         if self.path.find("/send_key?")>=0:
             get_data = self.path
             print(get_data)
@@ -703,7 +703,7 @@ class MyServer(BaseHTTPRequestHandler):
             self.end_headers()
             a = "ok"
             self.wfile.write(bytes(a,"utf-8"))  
-            return(0)
+            return 0
         if self.path == '/log.txt':
             self.send_response(200)
             self.send_header("Content-type", "text")
@@ -711,7 +711,7 @@ class MyServer(BaseHTTPRequestHandler):
             config = load_config(config_file, tv_path, lang_path)
             a = leer_img(cwd + separador + 'emby_xnoppo_client_logging.log')
             self.wfile.write(bytes(a))  
-            return(0)
+            return 0
         else:
             self.send_response(200)
             self.send_header("Content-type", "text/html")
@@ -775,7 +775,7 @@ class MyServer(BaseHTTPRequestHandler):
                     self.send_header('Access-Control-Allow-Origin', '*')
                     self.end_headers()
                     self.wfile.write(bytes("ERROR","utf-8"))
-                return(0)
+                return 0
         if self.path == '/check_oppo':
                 content_length = int(self.headers['Content-Length']) # <--- Gets the size of data
                 post_data = self.rfile.read(content_length) # <--- Gets the data itself
@@ -797,7 +797,7 @@ class MyServer(BaseHTTPRequestHandler):
                     self.send_header('Access-Control-Allow-Origin', '*')
                     self.end_headers()
                     self.wfile.write(bytes("ERROR","utf-8"))
-                return(0)
+                return 0
         if self.path == '/test_path':
                 content_length = int(self.headers['Content-Length']) # <--- Gets the size of data
                 post_data = self.rfile.read(content_length) # <--- Gets the data itself
@@ -820,7 +820,7 @@ class MyServer(BaseHTTPRequestHandler):
                     self.send_header('Access-Control-Allow-Origin', '*')
                     self.end_headers()
                     self.wfile.write(bytes("ERROR","utf-8"))
-                return(0)
+                return 0
         if self.path == '/navigate_path':
                 content_length = int(self.headers['Content-Length']) # <--- Gets the size of data
                 post_data = self.rfile.read(content_length) # <--- Gets the data itself
@@ -837,7 +837,7 @@ class MyServer(BaseHTTPRequestHandler):
                 self.send_header('Access-Control-Allow-Origin', '*')
                 self.end_headers()
                 self.wfile.write(bytes(json.dumps(a),"utf-8"))
-                return(0)
+                return 0
 
         if self.path == '/move_tv':
                 content_length = int(self.headers['Content-Length']) # <--- Gets the size of data
@@ -853,22 +853,8 @@ class MyServer(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(bytes(json.dumps(config),"utf-8"))
                 restart()
-                return(0)
-        if self.path == '/move_av':
-                content_length = int(self.headers['Content-Length']) # <--- Gets the size of data
-                post_data = self.rfile.read(content_length) # <--- Gets the data itself
-                config = json.loads(post_data.decode('utf-8'))
-                save_config(config_file, config)
+                return 0
 
-                self.send_response(200)
-                self.send_header("Content-Length", len(config))
-                self.send_header("Content-Type", "text/html")
-                self.send_header('Access-Control-Allow-Credentials', 'true')
-                self.send_header('Access-Control-Allow-Origin', '*')
-                self.end_headers()
-                self.wfile.write(bytes(json.dumps(config),"utf-8"))
-                restart()
-                return(0)
         if self.path == '/get_tv_key':
                 content_length = int(self.headers['Content-Length']) # <--- Gets the size of data
                 post_data = self.rfile.read(content_length) # <--- Gets the data itself
@@ -891,7 +877,7 @@ class MyServer(BaseHTTPRequestHandler):
                     self.send_header('Access-Control-Allow-Origin', '*')
                     self.end_headers()
                     self.wfile.write(bytes("ERROR","utf-8"))
-                return(0)
+                return 0
         if self.path == '/tv_test_conn':
                 content_length = int(self.headers['Content-Length']) # <--- Gets the size of data
                 post_data = self.rfile.read(content_length) # <--- Gets the data itself
@@ -913,7 +899,7 @@ class MyServer(BaseHTTPRequestHandler):
                     self.send_header('Access-Control-Allow-Origin', '*')
                     self.end_headers()
                     self.wfile.write(bytes("ERROR","utf-8"))
-                return(0)
+                return 0
         if self.path == '/get_tv_sources':
                 content_length = int(self.headers['Content-Length']) # <--- Gets the size of data
                 post_data = self.rfile.read(content_length) # <--- Gets the data itself
@@ -936,7 +922,7 @@ class MyServer(BaseHTTPRequestHandler):
                     self.send_header('Access-Control-Allow-Origin', '*')
                     self.end_headers()
                     self.wfile.write(bytes("ERROR","utf-8"))
-                return(0)
+                return 0
         if self.path == '/get_av_sources':
                 content_length = int(self.headers['Content-Length']) # <--- Gets the size of data
                 post_data = self.rfile.read(content_length) # <--- Gets the data itself
@@ -960,7 +946,7 @@ class MyServer(BaseHTTPRequestHandler):
                     self.send_header('Access-Control-Allow-Origin', '*')
                     self.end_headers()
                     self.wfile.write(bytes("ERROR","utf-8"))
-                return(0)
+                return 0
         if self.path == '/tv_test_init':
                 content_length = int(self.headers['Content-Length']) # <--- Gets the size of data
                 post_data = self.rfile.read(content_length) # <--- Gets the data itself
@@ -982,7 +968,7 @@ class MyServer(BaseHTTPRequestHandler):
                     self.send_header('Access-Control-Allow-Origin', '*')
                     self.end_headers()
                     self.wfile.write(bytes("ERROR","utf-8"))
-                return(0)
+                return 0
         if self.path == '/tv_test_end':
                 content_length = int(self.headers['Content-Length']) # <--- Gets the size of data
                 post_data = self.rfile.read(content_length) # <--- Gets the data itself
@@ -1004,7 +990,7 @@ class MyServer(BaseHTTPRequestHandler):
                     self.send_header('Access-Control-Allow-Origin', '*')
                     self.end_headers()
                     self.wfile.write(bytes("ERROR","utf-8"))
-                return(0)
+                return 0
         if self.path == '/av_test_on':
                 content_length = int(self.headers['Content-Length']) # <--- Gets the size of data
                 post_data = self.rfile.read(content_length) # <--- Gets the data itself
@@ -1026,7 +1012,7 @@ class MyServer(BaseHTTPRequestHandler):
                     self.send_header('Access-Control-Allow-Origin', '*')
                     self.end_headers()
                     self.wfile.write(bytes("ERROR","utf-8"))
-                return(0)
+                return 0
         if self.path == '/av_test_off':
                 content_length = int(self.headers['Content-Length']) # <--- Gets the size of data
                 post_data = self.rfile.read(content_length) # <--- Gets the data itself
@@ -1048,7 +1034,7 @@ class MyServer(BaseHTTPRequestHandler):
                     self.send_header('Access-Control-Allow-Origin', '*')
                     self.end_headers()
                     self.wfile.write(bytes("ERROR","utf-8"))
-                return(0)
+                return 0
         if self.path == '/av_test_hdmi':
                 content_length = int(self.headers['Content-Length']) # <--- Gets the size of data
                 post_data = self.rfile.read(content_length) # <--- Gets the data itself
@@ -1070,7 +1056,7 @@ class MyServer(BaseHTTPRequestHandler):
                     self.send_header('Access-Control-Allow-Origin', '*')
                     self.end_headers()
                     self.wfile.write(bytes("ERROR","utf-8"))
-                return(0)
+                return 0
         if self.path == '/start_movie':
                 content_length = int(self.headers['Content-Length']) # <--- Gets the size of data
                 post_data = self.rfile.read(content_length) # <--- Gets the data itself
@@ -1093,7 +1079,7 @@ class MyServer(BaseHTTPRequestHandler):
                     self.send_header('Access-Control-Allow-Origin', '*')
                     self.end_headers()
                     self.wfile.write(bytes("ERROR","utf-8"))
-                return(0)
+                return 0
 if __name__ == "__main__":
 
     cwd = os.path.dirname(os.path.abspath(__file__))
