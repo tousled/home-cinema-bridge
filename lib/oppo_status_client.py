@@ -32,8 +32,9 @@ class OppoStatusClient:
     """
 
     ACTIVE_PLAYBACK_STATES = {"PLAY", "PAUSE", "DISC_MENU"}
-    IDLE_STATES = {"SCREEN_SAVER", "HOME_MENU"}
-    TRANSITION_STATES = {"STOP", "OPEN", "LOADING"}
+    IDLE_STATES = {"HOME_MENU", "SCREEN_SAVER", "MEDIA_CENTER", "NO_DISC"}
+    TRANSITION_STATES = {"STOP", "OPEN", "CLOSE", "LOADING"}
+
 
     def __init__(self, host: str, port: int = 23, timeout: float = 3.0):
         self.host = host
