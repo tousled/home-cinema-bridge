@@ -244,20 +244,6 @@ app.controller('xnoppo_config', function($scope, $http)
 			}, function myError(response) {
 			$scope.response = response.statusText;
 		  })};
-	$scope.tv_test_conn = function () {
-			$scope.tv_test_button = $scope.lang.tv_test_button_test;
-			$scope.hide_spin = false;
-			$http.post("tv_test_conn", $scope.config).then(function mySuccess(responset) {
-			$scope.responset = responset.data;
-			$scope.error = false;
-			$scope.tv_test_button = $scope.lang.tv_test_button_ok;
-			$scope.hide_spin =true;
-			}, function myError(responset) {
-			$scope.responset = responset.statusText;
-			$scope.error = true;
-			$scope.tv_test_button = $scope.lang.tv_test_button_err;
-			$scope.hide_spin =true;
-		  })};
 	$scope.get_tv_sources = function () {
 			$scope.tv_getsources_button = $scope.lang.tv_getsources_button_test;
 			$scope.hide_spin_source = false;

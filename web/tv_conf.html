@@ -37,7 +37,6 @@ app.controller('xnoppo_config', function($scope, $http)
 		$scope.lang = {};
 		$scope.lang = response2.data;
 		$scope.tv_test_button = $scope.lang.tv_test_button;
-		$scope.tv_getkey_button = $scope.lang.tv_getkey_button;
 		$scope.tv_getsources_button =$scope.lang.tv_getsources_button;
 		$scope.tv_test_init_button = $scope.lang.tv_test_init_button;
 		$scope.tv_test_end_button = $scope.lang.tv_test_end_button;
@@ -86,16 +85,24 @@ app.controller('xnoppo_config', function($scope, $http)
 	$scope.tv_test_conn = function () {
 			$scope.tv_test_button = $scope.lang.tv_test_button_test;
 			$scope.hide_spin = false;
+
 			$http.post("tv_test_conn", $scope.config).then(function mySuccess(responset) {
-			$scope.responset = responset.data;
-			$scope.error = false;
-			$scope.tv_test_button = $scope.lang.tv_test_button_ok;
-			$scope.hide_spin =true;
+				$scope.responset = responset.data;
+				$scope.error = false;
+				$scope.tv_test_button = $scope.lang.tv_test_button_ok;
+				$scope.hide_spin =true;
+
+				$http.get("xnoppo_config").then(function(response) {
+					$scope.config = response.data;
+					$scope.selectedTV = $scope.config.TV_model;
+					$scope.SelSource = $scope.config.TV_SOURCES[$scope.config.Source];
+				});
+
 			}, function myError(responset) {
-			$scope.responset = responset.statusText;
-			$scope.error = true;
-			$scope.tv_test_button = $scope.lang.tv_test_button_err;
-			$scope.hide_spin =true;
+				$scope.responset = responset.statusText;
+				$scope.error = true;
+				$scope.tv_test_button = $scope.lang.tv_test_button_err;
+				$scope.hide_spin =true;
 		  })};
 
 	$scope.get_tv_sources = function () {
@@ -210,7 +217,14 @@ function w3_close() {
 					    </p>
 						<p>
 						<label>{{lang.tv_conf_mac}}</label>
-						<input class="w3-input w3-border" type="text" ng-model="config.TV_MAC" placeholder={{lang.tv_conf_mac}}>
+						<input class="w3-input w3-border" type="text" ng-model="config.TV_MAC" disabled placeholder={{lang.tv_conf_mac_placeholder}}>
+						</p>
+						<p class="w3-small w3-text-grey" ng-if="config.TV_MAC">
+						  {{lang.tv_conf_mac_detected}}
+						</p>
+
+						<p class="w3-small w3-text-grey" ng-if="!config.TV_MAC">
+						  {{lang.tv_conf_mac_pending}}
 						</p>
 						<p>
 						<label>{{lang.tv_conf_source}} </label>

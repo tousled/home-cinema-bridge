@@ -818,6 +818,7 @@ class MyServer(BaseHTTPRequestHandler):
                         config.get("TV_IP", ""),
                         bool(config.get("TV_MAC", "")),
                     )
+                    save_config(config_file, config)
                     self.send_legacy_response(200, a)
                 else:
                     logging.warning(
