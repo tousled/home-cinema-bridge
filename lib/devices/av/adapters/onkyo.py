@@ -2,7 +2,7 @@ import logging
 
 import eiscp
 
-from .base import BaseAvReceiver
+from lib.devices.av.base import BaseAvReceiver
 
 
 class OnkyoAvReceiver(BaseAvReceiver):

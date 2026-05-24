@@ -8,7 +8,7 @@ from wakeonlan import send_magic_packet
 
 from lib.network.arp import find_mac_by_ip
 
-from .base import BaseTvController, TvStatus
+from lib.devices.tv.base import BaseTvController, TvStatus
 
 
 EMBY_APP_ID = "com.emby.app"

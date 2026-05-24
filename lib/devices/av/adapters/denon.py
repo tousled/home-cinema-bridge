@@ -1,7 +1,7 @@
 import logging
 
-from .base import BaseAvReceiver
-from .tcp import TcpCommandSender
+from lib.devices.av.base import BaseAvReceiver
+from lib.devices.av.tcp import TcpCommandSender
 
 
 class DenonAvReceiver(BaseAvReceiver, TcpCommandSender):

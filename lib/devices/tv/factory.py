@@ -1,5 +1,5 @@
-from .lg import LgTvController
-from .scripts import ScriptsTvController
+from lib.devices.tv.adapters.lg import LgTvController
+from lib.devices.tv.adapters.scripts import ScriptsTvController
 
 
 TV_CONTROLLERS = {

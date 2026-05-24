@@ -1,9 +1,9 @@
-from .denon import DenonAvReceiver
-from .marantz import MarantzAvReceiver
-from .nad import NadAvReceiver
-from .onkyo import OnkyoAvReceiver
-from .scripts import ScriptsAvReceiver
-from .yamaha import YamahaAvReceiver
+from lib.devices.av.adapters.denon import DenonAvReceiver
+from lib.devices.av.adapters.marantz import MarantzAvReceiver
+from lib.devices.av.adapters.nad import NadAvReceiver
+from lib.devices.av.adapters.onkyo import OnkyoAvReceiver
+from lib.devices.av.adapters.scripts import ScriptsAvReceiver
+from lib.devices.av.adapters.yamaha import YamahaAvReceiver
 
 
 AV_RECEIVERS = {

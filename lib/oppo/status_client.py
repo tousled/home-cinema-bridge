@@ -1,14 +1,15 @@
 import socket
 import time
 from dataclasses import dataclass
-from enum import Enum
 
-
-class OppoPlaybackCategory(str, Enum):
-    ACTIVE = "ACTIVE"
-    IDLE = "IDLE"
-    TRANSITION = "TRANSITION"
-    UNKNOWN = "UNKNOWN"
+from lib.oppo.playback_state import (
+    OppoPlaybackCategory,
+    classify_oppo_status,
+    is_active_playback_state,
+    is_idle_state,
+    is_transition_state,
+    normalize_oppo_status,
+)
 
 
 @dataclass(frozen=True)
@@ -31,11 +32,6 @@ class OppoStatusClient:
     This client only reads status. It does not change playback state.
     """
 
-    ACTIVE_PLAYBACK_STATES = { "PLAY", "PAUSE", "DISC_MENU", "FFWD", "FREV", "SFWD", "SREV", "STEP"}
-    IDLE_STATES = {"HOME_MENU", "SCREEN_SAVER", "MEDIA_CENTER", "NO_DISC"}
-    TRANSITION_STATES = {"STOP", "OPEN", "CLOSE", "LOADING"}
-
-
     def __init__(self, host: str, port: int = 23, timeout: float = 3.0):
         self.host = host
         self.port = port
@@ -50,36 +46,15 @@ class OppoStatusClient:
     def query(self, command: str) -> OppoCommandResult:
         normalized_command = self._normalize_command(command)
         raw_response = self._send(normalized_command)
-        status = self._parse_status(raw_response)
+        status = normalize_oppo_status(raw_response)
 
         return OppoCommandResult(
             command=command.strip().lstrip("#").upper(),
             raw_response=raw_response,
             ok=raw_response.startswith("@OK"),
             status=status,
-            category=self.classify_status(status),
+            category=classify_oppo_status(status),
         )
-
-    def classify_status(self, status: str) -> OppoPlaybackCategory:
-        if status in self.ACTIVE_PLAYBACK_STATES:
-            return OppoPlaybackCategory.ACTIVE
-
-        if status in self.IDLE_STATES:
-            return OppoPlaybackCategory.IDLE
-
-        if status in self.TRANSITION_STATES:
-            return OppoPlaybackCategory.TRANSITION
-
-        return OppoPlaybackCategory.UNKNOWN
-
-    def is_active_playback_state(self, status: str) -> bool:
-        return self.classify_status(status) == OppoPlaybackCategory.ACTIVE
-
-    def is_idle_state(self, status: str) -> bool:
-        return self.classify_status(status) == OppoPlaybackCategory.IDLE
-
-    def is_transition_state(self, status: str) -> bool:
-        return self.classify_status(status) == OppoPlaybackCategory.TRANSITION
 
     def _send(self, payload: bytes) -> str:
         with socket.create_connection((self.host, self.port), timeout=self.timeout) as sock:
@@ -120,15 +95,3 @@ class OppoStatusClient:
             command = f"{command}\r"
 
         return command.encode("ascii")
-
-    @staticmethod
-    def _parse_status(raw_response: str) -> str:
-        response = raw_response.strip()
-
-        if response.startswith("@OK"):
-            response = response[3:].strip()
-
-        if not response:
-            return "UNKNOWN"
-
-        return response.upper().replace(" ", "_")

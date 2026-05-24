@@ -8,7 +8,9 @@ import time
 
 from .Xnoppo_AVR import av_check_power, av_power_off, av_change_hdmi
 from .Xnoppo_TV import tv_change_hdmi, tv_set_prev
-from .oppo_status_client import OppoStatusClient
+from .oppo.status_client import OppoStatusClient
+from .oppo.playback_startup import wait_until_active_playback
+from .oppo.status_client import OppoStatusClient
 
 _qpl_last_observed_states = {}
 
@@ -830,17 +832,39 @@ def playother(EmbySession,data,scripterx=False):
             response_data8 = playnormalfile(servidor,fichero,'0',EmbySession.config,nfs)
     json.loads(response_data8)
     log_oppo_qpl_state(EmbySession.config, "after_playnormalfile")
-    timer=0
-    timeout=EmbySession.config["timeout_oppo_playitem"]
-    response_data_gb = getglobalinfo(EmbySession.config)
-    log_oppo_qpl_state(EmbySession.config, "before_getglobalinfo_loop", changes_only=True)
-    while response_data_gb.find('"is_video_playing":false') > 0 and timer<timeout:
-                time.sleep(2)
-                response_data_gb = getglobalinfo(EmbySession.config)
-                log_oppo_qpl_state(EmbySession.config, "before_getglobalinfo_loop", changes_only=True)
-                timer=timer+1
-                logging.debug('getglobalinfo: %s',response_data_gb)
-    if timer>=timeout:
+    timeout = EmbySession.config["timeout_oppo_playitem"]
+
+    def notify_playback_waiting(attempt: int):
+        if scripterx:
+            EmbySession.send_message2(
+                params["Session_id"],
+                EmbySession.lang["x_msg_wait_for_play"] + str(attempt) + 's',
+                999,
+            )
+        else:
+            EmbySession.send_user_message(
+                params["ControllingUserId"],
+                EmbySession.lang["x_msg_wait_for_play"] + str(attempt) + 's',
+                999,
+            )
+
+    startup_result = wait_until_active_playback(
+        config=EmbySession.config,
+        timeout=timeout,
+        interval=0.5,
+        on_playback_waiting=notify_playback_waiting,
+    )
+
+    logging.info(
+        "QPL playback startup result | started=%s | status=%s | category=%s | attempts=%s | elapsed=%.2fs",
+        startup_result.started,
+        startup_result.status,
+        startup_result.category.value,
+        startup_result.attempts,
+        startup_result.elapsed_seconds,
+    )
+
+    if not startup_result.started:
        if scripterx:
           EmbySession.send_message2(params["Session_id"], EmbySession.lang["x_msg_timeout_play"])
        else:

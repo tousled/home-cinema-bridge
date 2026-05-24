@@ -1,7 +1,7 @@
 import logging
 import subprocess
 
-from .base import BaseAvReceiver
+from lib.devices.av.base import BaseAvReceiver
 
 
 class ScriptsAvReceiver(BaseAvReceiver):
