@@ -104,7 +104,7 @@ def sendnotifyremote(UDP_IP):
 
 def check_socket(config,session_id=None):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    logging.info('Comprobando apertura del puerto del OPPO ')
+    logging.debug('Comprobando apertura del puerto del OPPO ')
     result = sock.connect_ex((config["Oppo_IP"],436))
     logging.debug("Resultado Chequeo: %s",str(result))
     net_retries=config["timeout_oppo_conection"]
@@ -117,10 +117,10 @@ def check_socket(config,session_id=None):
               sendnotifyremote(config["Oppo_IP"])
               result = sock.connect_ex((config["Oppo_IP"],436))
     if net_wait>=net_retries:
-            logging.info('Timeout esperando puerto del OPPO')
+            logging.debug('Timeout esperando puerto del OPPO')
             return(1)
     else:
-            logging.info('Puerto del OPPO abierto')
+            logging.debug('Puerto del OPPO abierto')
             return(0)
 
 def getmainfirmwareversion(config):
