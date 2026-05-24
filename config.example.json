@@ -10,7 +10,7 @@
     "Always_ON": true,
     "TV": false,
     "TV_IP": "",
-    "TV_KEY": "",
+    "TV_MAC": "",
     "TV_DeviceName": "",
     "Source": 0,
     "DebugLevel": 1,
@@ -43,18 +43,6 @@
     "check_beta": false,
     "smbtrick": false,
     "BRDisc": false,
-    "tv_dirs": [
-        "LG",
-        "SCRIPTS"
-    ],
-    "av_dirs": [
-        "NAD",
-        "DENON",
-        "SCRIPTS",
-        "ONKYO",
-        "YAMAHA",
-        "MARANTZ"
-    ],
     "langs": [
         "en-US",
         "es-ES"

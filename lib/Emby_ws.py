@@ -118,6 +118,8 @@ class XnoppoWs(threading.Thread):
         config["check_beta"]=default
         default = config.get("smbtrick",False)
         config["smbtrick"]=default
+        default = config.get("TV_MAC", "")
+        config["TV_MAC"] = default
 
         ##
         self.ws_config=config

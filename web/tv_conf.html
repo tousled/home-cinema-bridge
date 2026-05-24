@@ -37,7 +37,6 @@ app.controller('xnoppo_config', function($scope, $http)
 		$scope.lang = {};
 		$scope.lang = response2.data;
 		$scope.tv_test_button = $scope.lang.tv_test_button;
-		$scope.tv_getkey_button = $scope.lang.tv_getkey_button;
 		$scope.tv_getsources_button =$scope.lang.tv_getsources_button;
 		$scope.tv_test_init_button = $scope.lang.tv_test_init_button;
 		$scope.tv_test_end_button = $scope.lang.tv_test_end_button;
@@ -55,8 +54,7 @@ app.controller('xnoppo_config', function($scope, $http)
 			if ($scope.config.TV_model!=$scope.selectedTV){
 			$scope.config.TV_model=$scope.selectedTV;
 			console.log($scope.config.TV_model);
-			$scope.move_tv();
-			};
+			}
 		
 		};
 		$scope.hideLG= true;
@@ -83,46 +81,30 @@ app.controller('xnoppo_config', function($scope, $http)
             });
 			
 			};
-	$scope.move_tv = function(){
-          $http.post("move_tv", $scope.config)
-            .then(function(res){
-              console.log(res);
-            })};
+
 	$scope.tv_test_conn = function () {
 			$scope.tv_test_button = $scope.lang.tv_test_button_test;
 			$scope.hide_spin = false;
+
 			$http.post("tv_test_conn", $scope.config).then(function mySuccess(responset) {
-			$scope.responset = responset.data;
-			$scope.error = false;
-			$scope.tv_test_button = $scope.lang.tv_test_button_ok;
-			$scope.hide_spin =true;
+				$scope.responset = responset.data;
+				$scope.error = false;
+				$scope.tv_test_button = $scope.lang.tv_test_button_ok;
+				$scope.hide_spin =true;
+
+				$http.get("xnoppo_config").then(function(response) {
+					$scope.config = response.data;
+					$scope.selectedTV = $scope.config.TV_model;
+					$scope.SelSource = $scope.config.TV_SOURCES[$scope.config.Source];
+				});
+
 			}, function myError(responset) {
-			$scope.responset = responset.statusText;
-			$scope.error = true;
-			$scope.tv_test_button = $scope.lang.tv_test_button_err;
-			$scope.hide_spin =true;
+				$scope.responset = responset.statusText;
+				$scope.error = true;
+				$scope.tv_test_button = $scope.lang.tv_test_button_err;
+				$scope.hide_spin =true;
 		  })};
-	$scope.get_tv_key = function () {
-			$scope.tv_getkey_button = $scope.lang.tv_getkey_button_test;
-			$scope.hide_spin_key = false;
-			$http.post("get_tv_key", $scope.config).then(function mySuccess(responset) {
-			$scope.responset = responset.data;
-			$scope.error = false;
-			$scope.tv_getkey_button = $scope.lang.tv_getkey_button_ok;
-			$http.get("xnoppo_config").then(function(response) {
-			$scope.config = {};
-			$scope.config = response.data;
-			$scope.selectedTV=$scope.config.TV_model;
-			$scope.SelSource=$scope.config.TV_SOURCES[$scope.config.Source];
-			console.log(response.data);});
-			$scope.hide_spin_key =true;
-			$scope.config.TV_KEY=responset.TV_KEY;
-			}, function myError(responset) {
-			$scope.responset = responset.statusText;
-			$scope.error = true;
-			$scope.tv_getkey_button = $scope.lang.tv_getkey_button_err;
-			$scope.hide_spin_key =true;
-		  })};
+
 	$scope.get_tv_sources = function () {
 			$scope.tv_getsources_button = $scope.lang.tv_getsources_button_test;
 			$scope.hide_spin_source = false;
@@ -234,14 +216,16 @@ function w3_close() {
 						<br>
 					    </p>
 						<p>
-						<label>{{lang.tv_conf_authkey}}</label>
-						<input class="w3-input w3-border" type="text" ng-model="config.TV_KEY" placeholder={{lang.tv_conf_authkey}}>
+						<label>{{lang.tv_conf_mac}}</label>
+						<input class="w3-input w3-border" type="text" ng-model="config.TV_MAC" disabled placeholder={{lang.tv_conf_mac_placeholder}}>
 						</p>
-						<p>
-						<button ng-click="get_tv_key()" class="w3-btn w3-teal  w3-right""><i class="fa fa-spinner w3-spin" style="font-size:20px" ng-hide=hide_spin_key></i> {{tv_getkey_button}}</button>
-						<br>
-						<br>
-					    </p>
+						<p class="w3-small w3-text-grey" ng-if="config.TV_MAC">
+						  {{lang.tv_conf_mac_detected}}
+						</p>
+
+						<p class="w3-small w3-text-grey" ng-if="!config.TV_MAC">
+						  {{lang.tv_conf_mac_pending}}
+						</p>
 						<p>
 						<label>{{lang.tv_conf_source}} </label>
 						<select class="w3-select w3-border" ng-model="SelSource" ng-options="x.nombre for x in config.TV_SOURCES">
