@@ -2,7 +2,7 @@ import logging
 
 import requests
 
-from .base import BaseAvReceiver
+from lib.devices.av.base import BaseAvReceiver
 
 
 class YamahaAvReceiver(BaseAvReceiver):

@@ -1,6 +1,6 @@
 import unittest
 
-from lib.oppo_playback_state import (
+from lib.oppo.playback_state import (
     OppoPlaybackCategory,
     classify_oppo_status,
     normalize_oppo_status,
