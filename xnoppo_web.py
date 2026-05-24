@@ -154,10 +154,8 @@ def get_state():
         status["mem_perc"]=psutil.virtual_memory().percent
         
         # you can have the percentage of used RAM
-        print(psutil.virtual_memory().percent)
-
-
-        print(status)
+        logging.debug(psutil.virtual_memory().percent)
+        logging.debug(status)
         return(status)
 
 def load_config(config_file, lang_path):
