@@ -10,7 +10,8 @@ from lib.Xnoppo import check_socket, sendnotifyremote, getmainfirmwareversion, g
 from lib.oppo_autoscript import umount_shared_folder
 from lib.Xnoppo_AVR import get_hdmi_list, av_check_power, av_power_off, av_change_hdmi
 from lib.Xnoppo_TV import tv_test_conn, get_tv_sources, tv_change_hdmi, tv_set_prev
-from lib.config_manager import ensure_config_exists, is_configured, load_effective_config, save_effective_config
+from lib.config_manager import ensure_config_exists, is_configured, load_effective_config, save_effective_config, \
+    sanitize_config_for_web, merge_existing_secrets
 import requests
 from lib.Emby_ws import XnoppoWs
 from lib.Emby_http import EmbyHttp
@@ -480,6 +481,17 @@ def get_devices(config):
 
 class MyServer(BaseHTTPRequestHandler):
 
+    def send_json_response(self, response_status: int, body):
+        response_body = json.dumps(body, ensure_ascii=False).encode("utf-8")
+
+        self.send_response(response_status)
+        self.send_header("Content-Length", str(len(response_body)))
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Access-Control-Allow-Credentials", "true")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(response_body)
+
     def send_legacy_response(self, response_status: int, body: str):
         response_body = str(body).encode("utf-8")
         self.send_response(response_status)
@@ -594,51 +606,33 @@ class MyServer(BaseHTTPRequestHandler):
             self.wfile.write(bytes(i))
             return 0
         if self.path == '/xnoppo_config':
-            self.send_response(200)
-            self.send_header("Content-type", "application/json; charset=utf-8")
-            self.end_headers()
             a = load_config(config_file, lang_path)
-            self.wfile.write(bytes(json.dumps(a),"utf-8"))  
+            self.send_json_response(200, sanitize_config_for_web(a))
             return 0
         if self.path == '/xnoppo_config_lib':
-            self.send_response(200)
-            self.send_header("Content-type", "application/json; charset=utf-8")
-            self.end_headers()
             a = load_config(config_file, lang_path)
             carga_libraries(a)
-            self.wfile.write(bytes(json.dumps(a),"utf-8"))
+            self.send_json_response(200, sanitize_config_for_web(a))
             return 0
         if self.path == '/xnoppo_config_dev':
-            self.send_response(200)
-            self.send_header("Content-type", "application/json; charset=utf-8")
-            self.end_headers()
             a = load_config(config_file, lang_path)
             get_devices(a)
-            self.wfile.write(bytes(json.dumps(a),"utf-8"))
+            self.send_json_response(200, sanitize_config_for_web(a))
             return 0
         if self.path == '/check_version':
-            self.send_response(200)
-            self.send_header("Content-type", "application/json; charset=utf-8")
-            self.end_headers()
             config = load_config(config_file, lang_path)
             a = check_version(config)
-            self.wfile.write(bytes(json.dumps(a),"utf-8"))
+            self.send_json_response(200, sanitize_config_for_web(a))
             return 0
         if self.path == '/update_version':
-            self.send_response(200)
-            self.send_header("Content-type", "application/json; charset=utf-8")
-            self.end_headers()
             config = load_config(config_file, lang_path)
             a = update_version(config,vers_path,cwd)
             restart()
-            self.wfile.write(bytes(json.dumps(a),"utf-8"))
+            self.send_json_response(200, sanitize_config_for_web(a))
             return 0
         if self.path == '/get_state':
-            self.send_response(200)
-            self.send_header("Content-type", "application/json; charset=utf-8")
-            self.end_headers()
             a = get_state()
-            self.wfile.write(bytes(json.dumps(a),"utf-8"))
+            self.send_json_response(200, sanitize_config_for_web(a))
             return 0
         if self.path == '/restart':
             self.send_response(200)
@@ -653,15 +647,12 @@ class MyServer(BaseHTTPRequestHandler):
             self.end_headers()
             a = load_config(config_file, lang_path)
             get_selectableFolders(a)
-            self.wfile.write(bytes(json.dumps(a),"utf-8"))
+            self.send_json_response(200, sanitize_config_for_web(a))
             return 0
         if self.path == '/lang':
-            self.send_response(200)
-            self.send_header("Content-type", "application/json; charset=utf-8")
-            self.end_headers()
             config = load_config(config_file, lang_path)
             a = cargar_lang(lang_path + config["language"] + separador +'lang.js')
-            self.wfile.write(bytes(json.dumps(a),"utf-8"))  
+            self.send_json_response(200, sanitize_config_for_web(a))
             return 0
         if self.path.find("/send_key?")>=0:
             get_data = self.path
@@ -731,6 +722,7 @@ class MyServer(BaseHTTPRequestHandler):
                 content_length = int(self.headers['Content-Length']) # <--- Gets the size of data
                 post_data = self.rfile.read(content_length) # <--- Gets the data itself
                 config = json.loads(post_data.decode('utf-8'))
+                config = merge_existing_secrets(config_file, config)
                 save_config(config_file, config)
                 self.send_response(200)
                 self.send_header("Content-Length", len(config))
@@ -743,6 +735,7 @@ class MyServer(BaseHTTPRequestHandler):
                 content_length = int(self.headers['Content-Length']) # <--- Gets the size of data
                 post_data = self.rfile.read(content_length) # <--- Gets the data itself
                 config = json.loads(post_data.decode('utf-8'))
+                config = merge_existing_secrets(config_file, config)
                 a = test_emby(config)
                 if a == 'OK':
                     response_body = json.dumps(config).encode("utf-8")
@@ -797,13 +790,7 @@ class MyServer(BaseHTTPRequestHandler):
                 a = navigate_folder(path,config)
                 a_json=json.dumps(a)
                 print(len(a_json))
-                self.send_response(200)
-                self.send_header("Content-Length", len(a_json))
-                self.send_header("Content-type", "text/html; charset=utf-8")
-                self.send_header('Access-Control-Allow-Credentials', 'true')
-                self.send_header('Access-Control-Allow-Origin', '*')
-                self.end_headers()
-                self.wfile.write(bytes(json.dumps(a),"utf-8"))
+                self.send_json_response(200, sanitize_config_for_web(a))
                 return 0
 
         if self.path == '/tv_test_conn':

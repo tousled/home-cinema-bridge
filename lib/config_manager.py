@@ -13,6 +13,33 @@ EXAMPLE_CONFIG_FILE = "config.example.json"
 EXAMPLE_SECRETS_FILE = "config.secrets.example.json"
 
 SECRET_KEYS = {"user_password"}
+SENSITIVE_WEB_CONFIG_KEYS = {"user_password"}
+
+def merge_existing_secrets(config_path: Path | str, config: dict) -> dict:
+    config_path = Path(config_path)
+    secrets = _read_json(get_secrets_path(config_path))
+
+    merged_config = dict(config)
+
+    for key in SECRET_KEYS:
+        value = str(merged_config.get(key, "")).strip()
+
+        if not value and secrets.get(key):
+            merged_config[key] = secrets[key]
+
+    return merged_config
+
+def sanitize_config_for_web(config: dict) -> dict:
+    safe_config = dict(config)
+
+    safe_config["user_password_configured"] = bool(
+        str(config.get("user_password", "")).strip()
+    )
+
+    for key in SENSITIVE_WEB_CONFIG_KEYS:
+        safe_config.pop(key, None)
+
+    return safe_config
 
 
 def get_project_root() -> Path:
@@ -85,12 +112,16 @@ def save_effective_config(config_path: Path | str, config: dict) -> None:
 
     public_config = dict(config)
     existing_secrets = _read_json(secrets_path)
-
     secrets = dict(existing_secrets)
 
     for key in SECRET_KEYS:
         if key in public_config:
-            secrets[key] = public_config.pop(key) or ""
+            value = public_config.pop(key)
+
+            if value not in (None, ""):
+                secrets[key] = value
+            elif key not in secrets:
+                secrets[key] = ""
 
     _write_json(config_path, public_config)
     _write_json(secrets_path, secrets)

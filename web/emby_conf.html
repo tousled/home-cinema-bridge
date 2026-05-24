@@ -106,23 +106,33 @@ function w3_close() {
 							<p><label>{{lang.emby_conf_username}}</label>
 							<input class="w3-input w3-border w3-round" type="text" ng-model="config.user_name"></p>
 							<p><label>{{lang.emby_conf_password}}</label>
-							<input class="w3-input w3-border w3-round" type="password" ng-model="config.user_password"></p>
-							<BR>
+							<input class="w3-input w3-border w3-round"
+								   type="password"
+								   ng-model="config.user_password"
+								   placeholder="{{config.user_password_configured ? lang.emby_conf_password_placeholder_configured : lang.emby_conf_password_placeholder_missing}}">
+								<p class="w3-small w3-text-grey" ng-if="config.user_password_configured">
+								  {{lang.emby_conf_password_configured}}
+								</p>
+
+								<p class="w3-small w3-text-red" ng-if="!config.user_password_configured">
+								  {{lang.emby_conf_password_missing}}
+								</p>
+							<br>
 							<div class="w3-bar w3-right-align">
 								<button ng-click="check_emby()" class="w3-btn w3-teal"><i class="fa fa-spinner w3-spin" style="font-size:20px" ng-hide=hide_spin></i> {{emby_test_button}}</button>
 								<button ng-click="save_config()" class="w3-btn  w3-teal" ng-disabled="error">{{lang.emby_save_button}}</button>
 							</div>
-						<BR>
-						<BR>
-						<BR>
-						<BR>
-						<BR>
-						<BR>
+						<br>
+						<br>
+						<br>
+						<br>
+						<br>
+						<br>
 						
 						        <a href="oppo_conf.html" onclick="w3_close()" class="w3-button w3-right w3-teal">{{lang.emby_conf_next}}</a>
-								<BR>
+								<br>
 						</form>
-						<BR>
+						<br>
 						
 						<footer class="w3-container w3-teal w3-center w3-margin-top">
 							<p>Xnoppo</p>
@@ -140,7 +150,7 @@ function w3_close() {
    
 </div> 
 </div>
-<BR>
+<br>
   <!-- End Page Container -->
 </div>
 </body>
