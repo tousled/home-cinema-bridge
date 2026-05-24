@@ -1,7 +1,6 @@
 {
     "emby_server": "",
     "user_name": "",
-    "user_password": "",
     "output_path": "backup",
     "Oppo_IP": "",
     "timeout_oppo_conection": 10,
