@@ -78,7 +78,7 @@
 "tv_conf_enable": "Activate integration with TV",
 "tv_select_model": "TV brand selection",
 "tv_conf_ip": "Ip address of the TV",
-"tv_conf_authkey": "Authorization Key",
+"tv_conf_mac": "MAC of the TV",
 "tv_conf_source": "HDMI input where the Oppo is",
 "tv_conf_next": "Next -> AV",
 "tv_test_button": "Test Connection",
