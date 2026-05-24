@@ -10,7 +10,7 @@ from lib.Xnoppo import check_socket, sendnotifyremote, getmainfirmwareversion, g
 from lib.oppo_autoscript import umount_shared_folder
 from lib.Xnoppo_AVR import get_hdmi_list, av_check_power, av_power_off, av_change_hdmi
 from lib.Xnoppo_TV import tv_test_conn, get_tv_sources, tv_change_hdmi, tv_set_prev
-from lib.config_manager import ensure_config_exists, is_configured
+from lib.config_manager import ensure_config_exists, is_configured, load_effective_config, save_effective_config
 import requests
 from lib.Emby_ws import XnoppoWs
 from lib.Emby_http import EmbyHttp
@@ -91,15 +91,17 @@ def restart():
         print('fin restart')
         os._exit(0)
 
+
 def save_config(config_file, config):
-    with open(config_file, 'w') as fw:
-        json.dump(config, fw, indent=4)
-    fw.close
+    save_effective_config(config_file, config)
+
     try:
-        emby_wsocket.ws_config=config
-        emby_wsocket.EmbySession.config=config
+        emby_wsocket.ws_config = config
+        emby_wsocket.EmbySession.config = config
     except:
-        emby_wsocket.ws_config=config
+        emby_wsocket.ws_config = config
+
+
 def get_state():
         status={}
         status["Version"]=get_version()
@@ -130,10 +132,8 @@ def get_state():
 
 def load_config(config_file, lang_path):
 
-        with open(config_file, 'r') as f:    
-                config = json.load(f)
-                #ver_configuracion(config)
-        f.close
+        config = load_effective_config(config_file)
+
         ## new options default config values
         config["Version"]=get_version()
         default = config.get("Autoscript", False)
