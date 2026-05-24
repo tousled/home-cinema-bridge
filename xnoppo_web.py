@@ -15,6 +15,7 @@ from lib.config_manager import ensure_config_exists, is_configured, load_effecti
 import requests
 from lib.Emby_ws import XnoppoWs
 from lib.Emby_http import EmbyHttp
+from lib.oppo.availability import check_oppo_http_availability
 
 import shutil
 import threading
@@ -24,6 +25,13 @@ import psutil
 import sys
 from lib.devices.av.factory import get_supported_av_models
 from lib.devices.tv.factory import get_supported_tv_models
+
+
+WATCHDOG_INTERVAL_SECONDS = 5
+OPPO_WATCHDOG_CHECK_INTERVAL_SECONDS = 30
+
+WATCHDOG_IDLE_STATES = {"Free", "Not_Connected", "Stopped"}
+WATCHDOG_STARTUP_STATES = {"Loading", "Iniciando", "Starting"}
 
 def get_version():
     return("2.03")
@@ -37,51 +45,72 @@ def thread_function(ws_object):
 def watchdog_function(ws_object, config):
     """
     Vigila que el estado del script no se quede huérfano.
+
     Comprueba 2 cosas:
-    1. Que el OPPO no se haya apagado a lo bruto.
-    2. Que no se quede atascado en "Iniciando" si la app de Emby se cuelga.
+    1. Si el OPPO desaparece mientras hay una reproducción/transición activa.
+    2. Si la app se queda demasiado tiempo esperando el inicio de reproducción.
+
+    El OPPO solo se comprueba cuando hay una reproducción o transición activa.
+    En estado idle no tiene sentido consultar el puerto cada pocos segundos.
     """
-    tiempo_atascado = 0  # Contador de segundos
+    tiempo_atascado = 0
+    last_oppo_availability_check = 0
 
     while True:
-        time.sleep(5)  # Revisamos la salud cada 5 segundos
+        time.sleep(WATCHDOG_INTERVAL_SECONDS)
+
         try:
-            if hasattr(ws_object, 'EmbySession') and hasattr(ws_object.EmbySession, 'playstate'):
-                estado_actual = ws_object.EmbySession.playstate
+            if not hasattr(ws_object, "EmbySession") or not hasattr(ws_object.EmbySession, "playstate"):
+                continue
 
-                # Caso 1: El OPPO se ha apagado físicamente/desconectado de la red
-                if check_socket(config) != 0:
-                    if estado_actual not in ["Free", "Not_Connected", "Stopped"]:
-                        logging.warning(
-                            f"Watchdog: OPPO apagado o inalcanzable. Reseteando estado desde '{estado_actual}' a Libre.")
-                        ws_object.EmbySession.playstate = "Free"
-                        ws_object.EmbySession.playedtitle = ""
-                        ws_object.EmbySession.filename = ""
-                        tiempo_atascado = 0
-                    continue  # Saltamos a la siguiente comprobación en 5 seg
+            estado_actual = ws_object.EmbySession.playstate
 
-                # Caso 2: El OPPO está encendido, pero la app de la TV se colgó y no manda estado
-                # Asumimos que los estados de transición se llaman "Iniciando" o "Starting"
-                if estado_actual in ["Iniciando", "Starting"]:
-                    tiempo_atascado += 5
+            if estado_actual in WATCHDOG_IDLE_STATES:
+                tiempo_atascado = 0
+                continue
 
-                    # Leemos el timeout de tu config (o usamos 60s por defecto)
-                    max_timeout = config.get("timeout_oppo_playitem", 60)
+            now = time.monotonic()
 
-                    if tiempo_atascado > max_timeout:
-                        logging.warning(
-                            f"Watchdog: Atascado en 'Iniciando' más de {max_timeout}s. App colgada. Reseteando a Libre.")
-                        ws_object.EmbySession.playstate = "Free"
-                        ws_object.EmbySession.playedtitle = ""
-                        ws_object.EmbySession.filename = ""
-                        tiempo_atascado = 0
-                else:
-                    # Si está "Reproduciendo" (Playing) o "Libre", reseteamos el cronómetro
+            should_check_oppo = (
+                now - last_oppo_availability_check >= OPPO_WATCHDOG_CHECK_INTERVAL_SECONDS
+            )
+
+            if should_check_oppo:
+                last_oppo_availability_check = now
+                availability = check_oppo_http_availability(config)
+
+                if not availability.available:
+                    logging.warning(
+                        "Watchdog: OPPO unavailable while playstate=%s | host=%s | port=%s | error=%s",
+                        estado_actual,
+                        availability.host,
+                        availability.port,
+                        availability.error,
+                    )
+                    ws_object.EmbySession.playstate = "Free"
+                    ws_object.EmbySession.playedtitle = ""
+                    ws_object.EmbySession.filename = ""
                     tiempo_atascado = 0
+                    continue
 
-        except Exception as e:
-            # Silenciamos errores para no saturar el log si las variables aún no existen
-            pass
+            if estado_actual in WATCHDOG_STARTUP_STATES:
+                tiempo_atascado += WATCHDOG_INTERVAL_SECONDS
+                max_timeout = config.get("timeout_oppo_playitem", 60)
+
+                if tiempo_atascado > max_timeout:
+                    logging.warning(
+                        "Watchdog: playback startup stuck for more than %ss. Resetting state to Free.",
+                        max_timeout,
+                    )
+                    ws_object.EmbySession.playstate = "Free"
+                    ws_object.EmbySession.playedtitle = ""
+                    ws_object.EmbySession.filename = ""
+                    tiempo_atascado = 0
+            else:
+                tiempo_atascado = 0
+
+        except Exception:
+            logging.debug("Watchdog error", exc_info=True)
 
 def restart():
         print('restart')
@@ -125,10 +154,8 @@ def get_state():
         status["mem_perc"]=psutil.virtual_memory().percent
         
         # you can have the percentage of used RAM
-        print(psutil.virtual_memory().percent)
-
-
-        print(status)
+        logging.debug(psutil.virtual_memory().percent)
+        logging.debug(status)
         return(status)
 
 def load_config(config_file, lang_path):
