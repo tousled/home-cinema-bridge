@@ -3,7 +3,6 @@ FROM python:${PYTHON_VERSION}-slim
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        wakeonlan \
         build-essential \
     && rm -rf /var/lib/apt/lists/*
 
