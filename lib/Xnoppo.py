@@ -8,9 +8,11 @@ import time
 
 from .Xnoppo_AVR import av_check_power, av_power_off, av_change_hdmi
 from .Xnoppo_TV import tv_change_hdmi, tv_set_prev
-from .oppo.status_client import OppoStatusClient
-from .oppo.playback_startup import wait_until_active_playback
-from .oppo.status_client import OppoStatusClient
+from .devices.oppo.control_api_activation import OppoControlApiActivator
+from .devices.oppo.control_api_client import OppoControlApiClient
+from .devices.oppo.playback_state_waiter import wait_until_oppo_reports_active_playback
+from .devices.oppo.playback_status_client import OppoPlaybackStatusClient
+from .oppo_autoscript import umount_shared_folder
 
 _qpl_last_observed_states = {}
 
@@ -29,10 +31,10 @@ def log_oppo_qpl_state(config, label, changes_only=False):
             print(f"QPL:{label} skipped | Oppo_IP is not configured")
             return None
 
-        client = OppoStatusClient(
+        client = OppoPlaybackStatusClient(
             host=oppo_ip,
             port=int(config.get("OPPO_Port", 23)),
-            timeout=float(config.get("timeout_oppo_conection", 3)),
+            timeout=float(config.get("oppo_control_api_check_timeout", 3)),
         )
 
         result = client.query_playback_state()
@@ -89,6 +91,11 @@ def log_oppo_qpl_state_sequence(config, label, samples=5, interval=1):
         except Exception:
             pass
 
+
+def oppo_control_api_client(config):
+    return OppoControlApiClient.from_config(config)
+
+
 def sendnotifyremote(UDP_IP):
     UDP_PORT = 7624
     MESSAGE = "NOTIFY OREMOTE LOGIN"
@@ -102,191 +109,154 @@ def sendnotifyremote(UDP_IP):
 
     return 0
 
-def check_socket(config,session_id=None):
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    logging.debug('Comprobando apertura del puerto del OPPO ')
-    result = sock.connect_ex((config["Oppo_IP"],436))
-    logging.debug("Resultado Chequeo: %s",str(result))
-    net_retries=config["timeout_oppo_conection"]
-    net_wait=0
-    while result > 0 and net_wait<net_retries:
-              time.sleep(1)
-              net_wait=net_wait+1
-              logging.info('Esperando apertura del puerto del OPPO')
-              logging.info( 'Reintento %s',str(net_wait))
-              sendnotifyremote(config["Oppo_IP"])
-              result = sock.connect_ex((config["Oppo_IP"],436))
-    if net_wait>=net_retries:
-            logging.debug('Timeout esperando puerto del OPPO')
-            return(1)
-    else:
-            logging.debug('Puerto del OPPO abierto')
-            return(0)
+def check_socket(config, session_id=None):
+    activator = OppoControlApiActivator.from_config(config)
+    result = activator.ensure_control_api_available(
+        max_attempts=int(config["oppo_control_api_check_timeout"])
+    )
+
+    if result.available:
+        logging.debug("OPPO control API available | host=%s | port=%s | attempts=%s",
+                      result.host, result.port, result.attempts)
+        return 0
+
+    logging.warning("Timeout waiting for OPPO control API | host=%s | port=%s | attempts=%s | error=%s",
+                    result.host, result.port, result.attempts, result.error)
+    return 1
 
 def getmainfirmwareversion(config):
-    url = "http://" + config["Oppo_IP"] + ":436/getmainfirmwareversion"
-    headers = {}
-    response = requests.get(url, headers=headers)
-    return response.text
+    return oppo_control_api_client(config).get_main_firmware_version()
+
 
 def getsetupmenu(config):
-    url = "http://" + config["Oppo_IP"] + ":436/getsetupmenu"
-    headers = {}
-    response = requests.get(url, headers=headers)
-    return response.text
+    return oppo_control_api_client(config).get_setup_menu()
+
 
 def OppoSignin(config):
-    url = "http://" + config["Oppo_IP"] + ":436/signin?%7B%22appIconType%22%3A1%2C%22appIpAddress%22%3A%22" + '192.168.1.135' + "%22%7D"
-    headers = {}
-    response = requests.get(url, headers=headers)
-    return response.text
+    return oppo_control_api_client(config).sign_in()
+
 
 def getdevicelist(config):
-    url = "http://" + config["Oppo_IP"] + ":436/getdevicelist"
-    headers = {}
-    response = requests.get(url, headers=headers)
-    return response.text
+    return oppo_control_api_client(config).get_device_list()
+
 
 def getglobalinfo(config):
-    url = "http://" + config["Oppo_IP"] + ":436/getglobalinfo"
-    headers = {}
-    response = requests.get(url, headers=headers)
-    return response.text
+    return oppo_control_api_client(config).get_global_info()
+
 
 def getplayingtime(config):
-    url = "http://" + config["Oppo_IP"] + ":436/getplayingtime"
-    headers = {}
-    response = requests.get(url, headers=headers)
-    return response.text
+    return oppo_control_api_client(config).get_playing_time()
 
-def mountSharedFolderID(server,folder,Username,Password,config):
-    if config["DebugLevel"]==2:
+def mountSharedFolderID(server, folder, Username, Password, config):
+    if config["DebugLevel"] == 2:
         print("*** mountSharedFolderID ***")
-    logging.debug("*** mountSharedFolder ***")
-    url1 = "http://" + config["Oppo_IP"] + ':436/mountSharedFolder?'
-    url = ''
-    url = url + '{"server":"' + server + '",'
-    url = url + '"bWithID":1,"folder":"'+urllib.parse.quote(folder) + '",'
-    url = url + '"userName":"'+Username + '",'
-    url = url + '"password":"'+Password + '",'
-    url = url + '"bRememberID":1}'
-    headers = {}
-    url = url1 + url
-    logging.debug(url)
-    try:
-        response = requests.get(url, headers=headers,timeout=config["timeout_oppo_mount"])
-    except:
-        error = '{"success":false,"retInfo":"Timeout in Mount Request"}'
-        return error
-    if config["DebugLevel"]==2:
+
+    logging.debug("*** mountSharedFolderID ***")
+
+    response_text = oppo_control_api_client(config).mount_samba_folder_with_id(
+        server=server,
+        folder=folder,
+        username=Username,
+        password=Password,
+        timeout=config["timeout_oppo_mount"],
+    )
+
+    if config["DebugLevel"] == 2:
         print("*** Fin mountSharedFolderID ***")
-    logging.debug("*** Mount Response: %s",response.text)
-    return response.text
 
-def mountSharedFolder(server,folder,Username,Password,config,checksmb=True):
-    if config["DebugLevel"]==2:
+    logging.debug("*** Mount Response: %s", response_text)
+    return response_text
+
+def mountSharedFolder(server, folder, Username, Password, config, checksmb=True):
+    if config["DebugLevel"] == 2:
         print("*** mountSharedFolder ***")
-    logging.debug("*** mountSharedFolder ***")
-    if config["smbtrick"]== True and checksmb == True:
-            smbtrick(server + '/' + folder,config)
-    url1 = "http://" + config["Oppo_IP"] + ':436/mountSharedFolder?'
-    url = ''
-    url = url + '{"server":"' + server + '",'
-    url = url + '"bWithID":0,"folder":"'+urllib.parse.quote(folder) + '",'
-    url = url + '"userName":"''",'
-    url = url + '"password":"''",'
-    url = url + '"bRememberID":0}'
-    headers = {}
-    url = url1 + url
-    logging.debug(url)
-    try:
-        response = requests.get(url, headers=headers,timeout=config["timeout_oppo_mount"])
-    except:
-        error = '{"success":false,"retInfo":"Timeout in Mount Request"}'
-        return error   
-    if config["DebugLevel"]==2:
-        print(response.text)
-        print("*** Fin mountSharedFolder ***")
-    logging.debug("*** Mount Response: %s",response.text)
-    return response.text
 
-def mountSharedNFSFolder(server,folder,Username,Password,config):
-    if config["DebugLevel"]==2:
-        print("*** mountSharedFolder ***")
     logging.debug("*** mountSharedFolder ***")
-    url1 = "http://" + config["Oppo_IP"] + ':436/mountNfsSharedFolder?'
-    url = ''
-    url = url + '{"server":"' + server + '",'
-    url = url + '"folder":"'+urllib.parse.quote(folder) + '"}'
-    headers = {}
-    url = url1 + url
-    logging.debug(url)
-    try:
-        response = requests.get(url, headers=headers,timeout=config["timeout_oppo_mount"])
-    except:
-        error = '{"success":false,"retInfo":"Timeout in Mount Request"}'
-        return error
-    if config["DebugLevel"]==2:
-        print(response.text)
-        print("*** Fin mountSharedFolder ***")
-    if response.text=='{}':
-        error = '{"success":true,"retInfo":""}'
-        return error
-    logging.debug("*** Mount Response: %s",response.text)
-    return response.text
 
-def LoginNFS(config,server):
+    if config["smbtrick"] is True and checksmb is True:
+        smbtrick(server + "/" + folder, config)
+
+    response_text = oppo_control_api_client(config).mount_samba_folder(
+        server=server,
+        folder=folder,
+        timeout=config["timeout_oppo_mount"],
+    )
+
+    if config["DebugLevel"] == 2:
+        print(response_text)
+        print("*** Fin mountSharedFolder ***")
+
+    logging.debug("*** Mount Response: %s", response_text)
+    return response_text
+
+def mountSharedNFSFolder(server, folder, Username, Password, config):
+    if config["DebugLevel"] == 2:
+        print("*** mountSharedNFSFolder ***")
+
+    logging.debug("*** mountSharedNFSFolder ***")
+
+    response_text = oppo_control_api_client(config).mount_nfs_folder(
+        server=server,
+        folder=folder,
+        timeout=config["timeout_oppo_mount"],
+    )
+
+    if config["DebugLevel"] == 2:
+        print(response_text)
+        print("*** Fin mountSharedNFSFolder ***")
+
+    logging.debug("*** Mount Response: %s", response_text)
+    return response_text
+
+def LoginNFS(config, server):
     logging.debug("LoginNFS")
-    url = "http://" + config["Oppo_IP"] + ':436/loginNfsServer?{"serverName":"'+ str(server) + '"}'
-    headers = {}
-    logging.debug(url)
-    response = requests.get(url, headers=headers)
-    if config["DebugLevel"]==2:
-        print("*** LoginNFS Response: " + response.text)
-    logging.debug("*** LoginNFS Response: %s",response.text)
-    return response.text
+    response_text = oppo_control_api_client(config).login_nfs_server(server)
+
+    if config["DebugLevel"] == 2:
+        print("*** LoginNFS Response: " + response_text)
+
+    logging.debug("*** LoginNFS Response: %s", response_text)
+    return response_text
 
 
-def playnormalfile(server,filename,index,config,nfs):
-    if config["DebugLevel"]==2:
+def playnormalfile(server, filename, index, config, nfs):
+    if config["DebugLevel"] == 2:
         print("*** playnormalfile ***")
-    logging.debug("*** playnormalfile ***")
-    if nfs:
-        url0 = 'http://' + config["Oppo_IP"] + ':436/playnormalfile?{' + urllib.parse.quote('"path":"/mnt/nfs1/' + filename + '","index":'+ index +',"type":1,"appDeviceType":2,"extraNetPath":"'+ server + '","playMode":0')+'}'
-    else:
-        url0 = 'http://' + config["Oppo_IP"] + ':436/playnormalfile?{' + urllib.parse.quote('"path":"/mnt/cifs1/' + filename + '","index":'+ index +',"type":1,"appDeviceType":2,"extraNetPath":"'+ server + '","playMode":0')+'}'
-    headers = {}
-    logging.debug(url0)
-    try:
-        response = requests.get(url0, headers=headers,timeout=config["timeout_oppo_playitem"])
-    except:
-        error = '{"success":false,"retInfo":"Timeout in Play Request"}'
-        return error
-    if config["DebugLevel"]==2:
-        print("*** Fin playnormalfile ***")
-        print(response.text)
-    logging.debug("*** Playnormalfile Response: %s",response.text)
-    return response.text
 
-def checkfolderhasbdmv(config,folder,nfs):
-    if config["DebugLevel"]==2:
+    logging.debug("*** playnormalfile ***")
+
+    response_text = oppo_control_api_client(config).play_normal_file(
+        server=server,
+        filename=filename,
+        index=index,
+        nfs=nfs,
+        timeout=config["timeout_oppo_playitem"],
+    )
+
+    if config["DebugLevel"] == 2:
+        print("*** Fin playnormalfile ***")
+        print(response_text)
+
+    logging.debug("*** Playnormalfile Response: %s", response_text)
+    return response_text
+
+def checkfolderhasbdmv(config, folder, nfs):
+    if config["DebugLevel"] == 2:
         print("*** checkfolderhasbdmv ***")
+
     logging.debug("*** checkfolderhasbdmv ***")
-    if nfs:
-        url = "http://" + config["Oppo_IP"] + ':436/checkfolderhasBDMV?{"folderpath":"/mnt/nfs1/' + urllib.parse.quote(folder) + '"}'
-    else:
-        url = "http://" + config["Oppo_IP"] + ':436/checkfolderhasBDMV?{"folderpath":"/mnt/cifs1/' + urllib.parse.quote(folder) + '"}'
-    headers = {}
-    logging.debug(url)
-    try:
-        response = requests.get(url, headers=headers,timeout=config["timeout_oppo_playitem"])
-    except:
-        error = '{"success":false,"retInfo":"Timeout in Play Request"}'
-        return error   
-    if config["DebugLevel"]==2:
+
+    response_text = oppo_control_api_client(config).check_folder_has_bdmv(
+        folder=folder,
+        nfs=nfs,
+        timeout=config["timeout_oppo_playitem"],
+    )
+
+    if config["DebugLevel"] == 2:
         print("*** Fin checkfolderhasbdmv ***")
-    logging.debug("*** Checkfolderhasbdmv Response: %s",response.text)
-    return response.text
+
+    logging.debug("*** Checkfolderhasbdmv Response: %s", response_text)
+    return response_text
 
 def convert(s):
     try:
@@ -610,16 +580,15 @@ def setaudiotrack(config,audio_index):
     logging.debug("*** setaudiotrack Response: %s",response.text)
     return response.text
 
-def LoginSambaWithOutID(config,server):
+def LoginSambaWithOutID(config, server):
     logging.debug("LoginSambaWithOutID")
-    url = "http://" + config["Oppo_IP"] + ':436/loginSambaWithOutID?{"serverName":"'+ str(server) + '"}'
-    headers = {}
-    logging.debug(url)
-    response = requests.get(url, headers=headers)
-    if config["DebugLevel"]==2:
-        print("*** LoginSambaWithOutID Response: " + response.text)
-    logging.debug("*** LoginSambaWithOutID Response: %s",response.text)
-    return response.text
+    response_text = oppo_control_api_client(config).login_samba_without_id(server)
+
+    if config["DebugLevel"] == 2:
+        print("*** LoginSambaWithOutID Response: " + response_text)
+
+    logging.debug("*** LoginSambaWithOutID Response: %s", response_text)
+    return response_text
 
 def getmaxaudiotrack(config):
     logging.debug("getaudiotrack")
@@ -848,7 +817,7 @@ def playother(EmbySession,data,scripterx=False):
                 999,
             )
 
-    startup_result = wait_until_active_playback(
+    startup_result = wait_until_oppo_reports_active_playback(
         config=EmbySession.config,
         timeout=timeout,
         interval=0.5,
@@ -1181,7 +1150,7 @@ def playto_file(EmbySession,data,scripterx=False):
            else:
                EmbySession.send_user_message(params["ControllingUserId"], error_message, 5000)
         if EmbySession.config["Autoscript"]==True:
-            result=umountSharedFolder(EmbySession.config)
+            result=umount_shared_folder(EmbySession.config)
             if EmbySession.config["DebugLevel"]>0: print("Unmount result: " + result)
         if EmbySession.config["AV"]==True and EmbySession.config["AV_Always_ON"]==False:
             if EmbySession.config["DebugLevel"]>0: print ("AV POWER OFF")

@@ -9,7 +9,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from lib.oppo.status_client import OppoStatusClient
+from lib.devices.oppo.playback_status_client import OppoPlaybackStatusClient
 
 
 def now() -> str:
@@ -35,7 +35,7 @@ def print_result(result, previous_status: str | None) -> str:
     return result.status
 
 
-def run_once(client: OppoStatusClient, commands: list[str]) -> int:
+def run_once(client: OppoPlaybackStatusClient, commands: list[str]) -> int:
     for command in commands:
         try:
             result = client.query(command)
@@ -47,7 +47,7 @@ def run_once(client: OppoStatusClient, commands: list[str]) -> int:
 
 
 def run_watch(
-    client: OppoStatusClient,
+    client: OppoPlaybackStatusClient,
     command: str,
     interval: float,
     changes_only: bool,
@@ -107,7 +107,7 @@ def main() -> int:
     )
 
     args = parser.parse_args()
-    client = OppoStatusClient(host=args.host, port=args.port, timeout=args.timeout)
+    client = OppoPlaybackStatusClient(host=args.host, port=args.port, timeout=args.timeout)
 
     if args.watch:
         return run_watch(

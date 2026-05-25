@@ -3,8 +3,8 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from lib.oppo.playback_state import OppoPlaybackCategory
-from lib.oppo.status_client import OppoCommandResult, OppoStatusClient
+from lib.devices.oppo.playback_state import OppoPlaybackCategory
+from lib.devices.oppo.playback_status_client import OppoCommandResult, OppoPlaybackStatusClient
 
 
 @dataclass(frozen=True)
@@ -17,7 +17,7 @@ class PlaybackStartupWaitResult:
     raw_response: str
 
 
-def wait_until_active_playback(
+def wait_until_oppo_reports_active_playback(
     config: dict,
     timeout: int | float,
     interval: float = 0.5,
@@ -85,10 +85,10 @@ def wait_until_active_playback(
 
 
 def _build_qpl_query(config: dict) -> Callable[[], OppoCommandResult]:
-    client = OppoStatusClient(
+    client = OppoPlaybackStatusClient(
         host=config["Oppo_IP"],
         port=int(config.get("OPPO_Port", 23)),
-        timeout=float(config.get("timeout_oppo_conection", 3)),
+        timeout=float(config.get("oppo_control_api_check_timeout", 3)),
     )
 
     return client.query_playback_state
