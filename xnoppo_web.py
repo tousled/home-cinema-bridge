@@ -6,7 +6,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from lib.Xnoppo import check_socket, sendnotifyremote, getmainfirmwareversion, getdevicelist, getsetupmenu, OppoSignin, \
     getglobalinfo, sendremotekey, LoginNFS, LoginSambaWithOutID, mountSharedNFSFolder, mountSharedFolder, \
-    navigate_folder
+    navigate_folder, oppo_control_api_client
 from lib.oppo_autoscript import umount_shared_folder
 from lib.Xnoppo_AVR import get_hdmi_list, av_check_power, av_power_off, av_change_hdmi
 from lib.Xnoppo_TV import tv_test_conn, get_tv_sources, tv_change_hdmi, tv_set_prev
@@ -15,7 +15,7 @@ from lib.config_manager import ensure_config_exists, is_configured, load_effecti
 import requests
 from lib.Emby_ws import XnoppoWs
 from lib.Emby_http import EmbyHttp
-from lib.oppo.availability import check_oppo_http_availability
+from lib.devices.oppo.control_api_activation import OppoControlApiActivator
 
 import shutil
 import threading
@@ -77,15 +77,16 @@ def watchdog_function(ws_object, config):
 
             if should_check_oppo:
                 last_oppo_availability_check = now
-                availability = check_oppo_http_availability(config)
+                oppo_control_api_activator_client = OppoControlApiActivator.from_config(config)
+                oppo_control_api_activation_result = oppo_control_api_activator_client.check_control_api_availability()
 
-                if not availability.available:
+                if not oppo_control_api_activation_result.available:
                     logging.warning(
                         "Watchdog: OPPO unavailable while playstate=%s | host=%s | port=%s | error=%s",
                         estado_actual,
-                        availability.host,
-                        availability.port,
-                        availability.error,
+                        oppo_control_api_activator_client.host,
+                        oppo_control_api_activator_client.control_api_port,
+                        oppo_control_api_activation_result.error,
                     )
                     ws_object.EmbySession.playstate = "Free"
                     ws_object.EmbySession.playedtitle = ""

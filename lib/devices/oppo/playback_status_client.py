@@ -2,12 +2,9 @@ import socket
 import time
 from dataclasses import dataclass
 
-from lib.oppo.playback_state import (
+from lib.devices.oppo.playback_state import (
     OppoPlaybackCategory,
     classify_oppo_status,
-    is_active_playback_state,
-    is_idle_state,
-    is_transition_state,
     normalize_oppo_status,
 )
 
@@ -21,15 +18,13 @@ class OppoCommandResult:
     category: OppoPlaybackCategory
 
 
-class OppoStatusClient:
+class OppoPlaybackStatusClient:
     """
-    Minimal OPPO/Chinoppo TCP status client.
+    Reads OPPO playback/power status using the OPPO TCP command interface.
 
-    The player accepts commands like:
-      #QPW\r -> @OK ON
-      #QPL\r -> @OK PLAY / @OK HOME MENU / @OK DISC MENU / ...
-
-    This client only reads status. It does not change playback state.
+    Examples:
+      #QPW -> @OK ON
+      #QPL -> @OK PLAY / @OK HOME MENU / @OK DISC MENU / ...
     """
 
     def __init__(self, host: str, port: int = 23, timeout: float = 3.0):
