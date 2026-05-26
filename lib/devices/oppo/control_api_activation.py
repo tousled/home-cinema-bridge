@@ -45,7 +45,7 @@ class OppoControlApiActivator:
         return cls(
             host=str(config["Oppo_IP"]),
             control_api_port=int(config.get("OPPO_HTTP_Port", OPPO_CONTROL_API_PORT)),
-            timeout_seconds=float(config.get("oppo_control_api_check_timeout", 1.0)),
+            timeout_seconds=float(config.get("timeout_oppo_conection", 1.0)),
         )
 
     def check_control_api_availability(self) -> OppoControlApiActivationResult:

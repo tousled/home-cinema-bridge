@@ -13,6 +13,7 @@ from .devices.oppo.control_api_client import OppoControlApiClient
 from .devices.oppo.playback_state_waiter import wait_until_oppo_reports_active_playback
 from .devices.oppo.playback_status_client import OppoPlaybackStatusClient
 from .oppo_autoscript import umount_shared_folder
+from .playback.timing import PlaybackStartupTimer
 
 _qpl_last_observed_states = {}
 
@@ -34,7 +35,7 @@ def log_oppo_qpl_state(config, label, changes_only=False):
         client = OppoPlaybackStatusClient(
             host=oppo_ip,
             port=int(config.get("OPPO_Port", 23)),
-            timeout=float(config.get("oppo_control_api_check_timeout", 3)),
+            timeout=float(config.get("timeout_oppo_conection", 3)),
         )
 
         result = client.query_playback_state()
@@ -112,7 +113,7 @@ def sendnotifyremote(UDP_IP):
 def check_socket(config, session_id=None):
     activator = OppoControlApiActivator.from_config(config)
     result = activator.ensure_control_api_available(
-        max_attempts=int(config["oppo_control_api_check_timeout"])
+        max_attempts=int(config["timeout_oppo_conection"])
     )
 
     if result.available:
@@ -601,50 +602,101 @@ def getmaxaudiotrack(config):
     audio_list=json.loads(response.text)
     return len(audio_list["audio_list"])
 
-def apply_selected_subtitle_track(emby_session, params):
+def apply_selected_subtitle_track(emby_session, params, startup_timer=None):
     logging.debug("apply_selected_subtitle_track")
     try:
         subtitle_stream_index = params.get("subtitle_stream_index")
+
         if subtitle_stream_index is not None and int(subtitle_stream_index) >= 0:
             if emby_session.config["DebugLevel"] > 0:
-                print('llamamos a set_subtitles_track')
+                print("llamamos a set_subtitles_track")
                 print(subtitle_stream_index)
 
-            subs_index = emby_session.get_xnoppo_subs_index(
-                params["ControllingUserId"],
-                params["item_id"],
-                subtitle_stream_index
-            )
+            if startup_timer is not None:
+                with startup_timer.measure_step("subtitle_resolve_emby_to_oppo_index"):
+                    subs_index = emby_session.get_xnoppo_subs_index(
+                        params["ControllingUserId"],
+                        params["item_id"],
+                        subtitle_stream_index,
+                    )
+            else:
+                subs_index = emby_session.get_xnoppo_subs_index(
+                    params["ControllingUserId"],
+                    params["item_id"],
+                    subtitle_stream_index,
+                )
 
             if subs_index is not None and int(subs_index) >= 0:
-                set_subtitles_track(emby_session.config, subs_index)
+                if startup_timer is not None:
+                    with startup_timer.measure_step("subtitle_set_oppo_track"):
+                        set_subtitles_track(
+                            emby_session.config,
+                            subs_index,
+                            startup_timer=startup_timer,
+                        )
+                else:
+                    set_subtitles_track(emby_session.config, subs_index)
+
             elif emby_session.config["DebugLevel"] > 0:
-                print('No valid OPPO subtitle index found')
+                print("No valid OPPO subtitle index found")
+
         elif emby_session.config["DebugLevel"] > 0:
-            print('No subtitle selected; skipping subtitle track selection')
+            print("No subtitle selected; skipping subtitle track selection")
+
     except:
         if emby_session.config["DebugLevel"] > 0:
-            print('Error indicando el subtitulo')
+            print("Error indicando el subtitulo")
 
-def set_subtitles_track(config, subs_index):
+def set_subtitles_track(config, subs_index, startup_timer=None):
     logging.debug("set_subtitles_track")
-    if config["DebugLevel"]>0: print(subs_index)
-    actual_track = get_current_subtitle_track(config)
-    if config["DebugLevel"]>0: print(actual_track)
-    url = "http://" + config["Oppo_IP"] + ':436/setsubttmenulist?{"cur_index":'+ str(int(subs_index)) + '}'
+
+    if config["DebugLevel"] > 0:
+        print(subs_index)
+
+    if startup_timer is not None:
+        with startup_timer.measure_step("subtitle_read_current_oppo_track"):
+            actual_track = get_current_subtitle_track(config)
+    else:
+        actual_track = get_current_subtitle_track(config)
+
+    if config["DebugLevel"] > 0:
+        print(actual_track)
+
+    url = (
+        "http://"
+        + config["Oppo_IP"]
+        + ':436/setsubttmenulist?{"cur_index":'
+        + str(int(subs_index))
+        + "}"
+    )
     headers = {}
     logging.debug(url)
 
     timeout = 0
-    while actual_track != subs_index and timeout < 10:
-        response = requests.get(url, headers=headers)
-        logging.debug("*** set_subtitles_track Response: %s", response.text)
 
-        if config["DebugLevel"] == 2: print(response.text)
+    if startup_timer is not None:
+        with startup_timer.measure_step("subtitle_set_and_confirm_oppo_track"):
+            while actual_track != subs_index and timeout < 10:
+                response = requests.get(url, headers=headers)
+                logging.debug("*** set_subtitles_track Response: %s", response.text)
 
-        time.sleep(1)
-        actual_track = get_current_subtitle_track(config)
-        timeout = timeout + 1
+                if config["DebugLevel"] == 2:
+                    print(response.text)
+
+                time.sleep(1)
+                actual_track = get_current_subtitle_track(config)
+                timeout = timeout + 1
+    else:
+        while actual_track != subs_index and timeout < 10:
+            response = requests.get(url, headers=headers)
+            logging.debug("*** set_subtitles_track Response: %s", response.text)
+
+            if config["DebugLevel"] == 2:
+                print(response.text)
+
+            time.sleep(1)
+            actual_track = get_current_subtitle_track(config)
+            timeout = timeout + 1
 
     return 0
 
@@ -821,7 +873,7 @@ def playother(EmbySession,data,scripterx=False):
         config=EmbySession.config,
         timeout=timeout,
         interval=0.5,
-        on_playback_waiting=notify_playback_waiting,
+        on_playback_waiting=notify_playback_waiting
     )
 
     logging.info(
@@ -859,22 +911,38 @@ def playother(EmbySession,data,scripterx=False):
         if EmbySession.config["DebugLevel"]>0: print("Fin Replay")
     
 def playto_file(EmbySession,data,scripterx=False):
+    startup_timer = PlaybackStartupTimer()
     EmbySession.playstate="Loading"
     EmbySession.currentdata=data
     reset_qpl_observation_state()
     log_oppo_qpl_state(EmbySession.config, "playto_file_start")
     if EmbySession.config["DebugLevel"]>0: print("scripterx is " + str(scripterx))
-    sendnotifyremote(EmbySession.config["Oppo_IP"])
-    params = EmbySession.process_data(data)
-    item_info = EmbySession.get_item_info2(EmbySession.user_info["User"]["Id"],params["item_id"],params["media_source_id"])
-    if scripterx:
-       if EmbySession.config["DebugLevel"]>0: print("Paramos reproduccion en el dispositivo")
-       EmbySession.playback_stop(params["Session_id"])
+
+    with startup_timer.measure_step("sendnotifyremote"):
+        sendnotifyremote(EmbySession.config["Oppo_IP"])
+
+    with startup_timer.measure_step("process_emby_payload"):
+        params = EmbySession.process_data(data)
+
+    with startup_timer.measure_step("load_emby_item_info"):
+        item_info = EmbySession.get_item_info2(
+            EmbySession.user_info["User"]["Id"],
+            params["item_id"],
+            params["media_source_id"],
+        )
+
+    with startup_timer.measure_step("stop_emby_client_playback"):
+        if scripterx:
+            if EmbySession.config["DebugLevel"] > 0:
+                print("Paramos reproduccion en el dispositivo")
+            EmbySession.playback_stop(params["Session_id"])
     movie = ""
-    if scripterx:
-        result=check_socket(EmbySession.config,params["Session_id"])
-    else:
-        result=check_socket(EmbySession.config)
+    with startup_timer.measure_step("ensure_oppo_control_api_available"):
+        if scripterx:
+            result = check_socket(EmbySession.config, params["Session_id"])
+        else:
+            result = check_socket(EmbySession.config)
+
     if result==0:
         if scripterx:
             if EmbySession.config["DebugLevel"]>0: print("Iniciando en el OPPO - X")
@@ -882,35 +950,48 @@ def playto_file(EmbySession,data,scripterx=False):
         else:
             if EmbySession.config["DebugLevel"]>0: print("Iniciando en el OPPO")
             EmbySession.send_user_message(params["ControllingUserId"], EmbySession.lang["x_msg_init_oppo"])
-        getmainfirmwareversion(EmbySession.config)
-        getdevicelist(EmbySession.config)
-        getsetupmenu(EmbySession.config)
-        OppoSignin(EmbySession.config)
-        getdevicelist(EmbySession.config)
-        getglobalinfo(EmbySession.config)
-        response_data6f = getdevicelist(EmbySession.config)
-        sendremotekey("EJT",EmbySession.config)
-        if EmbySession.config["BRDisc"]==True:
+
+        with startup_timer.measure_step("oppo_initial_control_queries"):
+            getmainfirmwareversion(EmbySession.config)
+            getdevicelist(EmbySession.config)
+            getsetupmenu(EmbySession.config)
+            OppoSignin(EmbySession.config)
+            getdevicelist(EmbySession.config)
+            getglobalinfo(EmbySession.config)
+            response_data6f = getdevicelist(EmbySession.config)
+
+        with startup_timer.measure_step("eject_oppo_disc_or_media"):
+            sendremotekey("EJT", EmbySession.config)
+            if EmbySession.config["BRDisc"] == True:
+                time.sleep(1)
+                sendremotekey("EJT", EmbySession.config)
+
+        with startup_timer.measure_step("ensure_av_power_on"):
+            if EmbySession.config["AV"] == True:
+                if EmbySession.config["DebugLevel"] > 0:
+                    print("AV POWER")
+                logging.info("Comprobamos que esta encendido el AV")
+                try:
+                    result = av_check_power(EmbySession.config)
+                    if EmbySession.config["DebugLevel"] > 0:
+                        print(result)
+                    logging.info("Resultado: %s", str(result))
+                except:
+                    pass
+
+        with startup_timer.measure_step("refresh_setup_menu_before_mount"):
             time.sleep(1)
-            sendremotekey("EJT",EmbySession.config)
-        if EmbySession.config["AV"]==True:
-            if EmbySession.config["DebugLevel"]>0: print("AV POWER")
-            logging.info ('Comprobamos que esta encendido el AV')
-            try:
-                result = av_check_power(EmbySession.config)
-                if EmbySession.config["DebugLevel"]>0: print(result)
-                logging.info ('Resultado: %s',str(result))
-            except:
-               pass
-        time.sleep(1)
-        getsetupmenu(EmbySession.config)
-        item_info, _ = resolve_mocked_item_info(EmbySession, params, item_info)
-        movie = item_info["Path"]
-        container = item_info["Container"]
-        logging.info("-----------------------------------------------------------")
-        movie = resolve_oppo_movie_path(movie, EmbySession.config)
-        logging.info("-----------------------------------------------------------")
-        servidor, carpeta, fichero = parse_oppo_path(movie)
+            getsetupmenu(EmbySession.config)
+
+        with startup_timer.measure_step("resolve_media_path"):
+            item_info, _ = resolve_mocked_item_info(EmbySession, params, item_info)
+            movie = item_info["Path"]
+            container = item_info["Container"]
+            logging.info("-----------------------------------------------------------")
+            movie = resolve_oppo_movie_path(movie, EmbySession.config)
+            logging.info("-----------------------------------------------------------")
+            servidor, carpeta, fichero = parse_oppo_path(movie)
+
         logging.info("Servidor               : %s", servidor)
         logging.info("Fichero                : %s", fichero)   
         logging.info("Carpeta                : %s",carpeta)
@@ -924,108 +1005,196 @@ def playto_file(EmbySession,data,scripterx=False):
             text = 'sub_type":"nfs'
         else:
             text = 'sub_type'
-        while response_data6f.find(text) == 0:
-              time.sleep(1)
-              response_data6f = getdevicelist(EmbySession.config)
-              response_data_on = sendremotekey("QPW",EmbySession.config)
-              logging.debug('Query POWER ON: %s',response_data_on)
-        device_list = json.loads(response_data6f)
-        if EmbySession.config["DebugLevel"] > 0:
-            print(device_list)
 
-        nfs = resolve_server_is_nfs(EmbySession.config, device_list, servidor)
+        with startup_timer.measure_step("wait_for_oppo_device_list"):
+            while response_data6f.find(text) == 0:
+                time.sleep(1)
+                response_data6f = getdevicelist(EmbySession.config)
+                response_data_on = sendremotekey("QPW", EmbySession.config)
+                logging.debug("Query POWER ON: %s", response_data_on)
 
-        if nfs:
-            LoginNFS(EmbySession.config,servidor)
-            getNfsShareFolderlist(EmbySession.config)
-        else:
-            LoginSambaWithOutID(EmbySession.config,servidor)
-            getSambaShareFolderlist(EmbySession.config)
-        if EmbySession.config["Always_ON"]==False:
-            time.sleep(5)
-        getsetupmenu(EmbySession.config)
+
+        with startup_timer.measure_step("resolve_share_protocol"):
+            device_list = json.loads(response_data6f)
+            if EmbySession.config["DebugLevel"] > 0:
+                print(device_list)
+
+            nfs = resolve_server_is_nfs(EmbySession.config, device_list, servidor)
+
+        with startup_timer.measure_step("login_share_protocol"):
+            if nfs:
+                LoginNFS(EmbySession.config, servidor)
+                getNfsShareFolderlist(EmbySession.config)
+            else:
+                LoginSambaWithOutID(EmbySession.config, servidor)
+                getSambaShareFolderlist(EmbySession.config)
+        with startup_timer.measure_step("legacy_wait_when_oppo_not_always_on"):
+            if EmbySession.config["Always_ON"]==False:
+                time.sleep(5)
+
+        with startup_timer.measure_step("refresh_setup_menu_after_share_login"):
+            getsetupmenu(EmbySession.config)
+
         if scripterx:
             EmbySession.send_message2(params["Session_id"], EmbySession.lang["x_msg_wait_for_mount"] ,1999)
         else:
             EmbySession.send_user_message(params["ControllingUserId"], EmbySession.lang["x_msg_wait_for_mount"] ,1999)
-        if nfs:
-            response_data7 = mountSharedNFSFolder(servidor,carpeta,'','',EmbySession.config)
-        else:
-            response_data7 = mountSharedFolder(servidor,carpeta,'','',EmbySession.config)
+
+        with startup_timer.measure_step("mount_shared_folder"):
+            if nfs:
+                response_data7 = mountSharedNFSFolder(
+                    servidor, carpeta, "", "", EmbySession.config
+                )
+            else:
+                response_data7 = mountSharedFolder(
+                    servidor, carpeta, "", "", EmbySession.config
+                )
+
         response_mount=json.loads(response_data7)
         if response_mount["success"]==True:
-            if container=='bluray':
-                response_data8 = checkfolderhasbdmv(EmbySession.config,fichero,nfs)
-            else:
-                response_data8 = playnormalfile(servidor,fichero,'0',EmbySession.config,nfs)
+            with startup_timer.measure_step("start_oppo_playback"):
+                if container == "bluray":
+                    response_data8 = checkfolderhasbdmv(
+                        EmbySession.config, fichero, nfs
+                    )
+                else:
+                    response_data8 = playnormalfile(
+                        servidor, fichero, "0", EmbySession.config, nfs
+                    )
+
             response_play=json.loads(response_data8)
             log_oppo_qpl_state(EmbySession.config, "after_playnormalfile")
-            if response_play["success"]==True:
-                response_data_gb = getglobalinfo(EmbySession.config)
-                log_oppo_qpl_state(EmbySession.config, "before_getglobalinfo_loop", changes_only=True)
-                timer=0
-                timeout=EmbySession.config["timeout_oppo_playitem"]
-                while response_data_gb.find('"is_video_playing":false') > 0 and timer<timeout:
+
+            if response_play["success"] == True:
+                timer = 0
+                timeout = EmbySession.config["timeout_oppo_playitem"]
+
+                with startup_timer.measure_step("wait_until_oppo_video_playing"):
+                    response_data_gb = getglobalinfo(EmbySession.config)
+                    log_oppo_qpl_state(
+                        EmbySession.config,
+                        "before_wait_until_video_playing",
+                        changes_only=True,
+                    )
+
+                    while (
+                        response_data_gb.find('"is_video_playing":false') > 0
+                        and timer < timeout
+                    ):
                         time.sleep(1)
                         response_data_gb = getglobalinfo(EmbySession.config)
-                        log_oppo_qpl_state(EmbySession.config, "before_getglobalinfo_loop", changes_only=True)
-                        timer=timer+1
-                        logging.debug('getglobalinfo: %s',response_data_gb)
+                        log_oppo_qpl_state(
+                            EmbySession.config,
+                            "wait_until_oppo_video_playing",
+                            changes_only=True,
+                        )
+                        timer = timer + 1
+                        logging.debug("getglobalinfo: %s", response_data_gb)
+
                         if scripterx:
-                            EmbySession.send_message2(params["Session_id"], EmbySession.lang["x_msg_wait_for_play"] + str(timer) + 's',999)
+                            EmbySession.send_message2(
+                                params["Session_id"],
+                                EmbySession.lang["x_msg_wait_for_play"]
+                                + str(timer)
+                                + "s",
+                                999,
+                            )
                         else:
-                            EmbySession.send_user_message(params["ControllingUserId"], EmbySession.lang["x_msg_wait_for_play"] + str(timer) + 's',999)
-                logging.debug('getglobalinfo: %s',response_data_gb)
-                if timer>=timeout:
+                            EmbySession.send_user_message(
+                                params["ControllingUserId"],
+                                EmbySession.lang["x_msg_wait_for_play"]
+                                + str(timer)
+                                + "s",
+                                999,
+                            )
+
+                logging.debug("getglobalinfo: %s", response_data_gb)
+
+                if timer >= timeout:
                     if scripterx:
                         EmbySession.send_message2(params["Session_id"], EmbySession.lang["x_msg_timeout_play"])
                     else:
                         EmbySession.send_user_message(params["ControllingUserId"], EmbySession.lang["x_msg_timeout_play"])
                     logging.info('Timeout Reproduciendo %s',movie)
                 else:
-                    EmbySession.playstate="Playing"
-                    EmbySession.playnow(data)
+
+                    with startup_timer.measure_step("notify_emby_playback_started"):
+                        EmbySession.playstate = "Playing"
+                        EmbySession.playnow(data)
+
                     if EmbySession.config["DebugLevel"]>0: print(params["auto_resume"])
-                    if params["auto_resume"]<=0:
-                        setplaytime(EmbySession.config,0)
-                        if EmbySession.config["DebugLevel"]>0: print('Se inicia desde el principio el video')
-                    else:
-                        playticks=params["auto_resume"]
-                        setplaytime(EmbySession.config,playticks)
-                        if EmbySession.config["DebugLevel"]>0: print('Se restablece la reproduccion en ' + str(playticks))
-                    try:
-                        if params["audio_stream_index"]:
-                            audio_index = EmbySession.get_xnoppo_audio_index(params["ControllingUserId"],params["item_id"],params["audio_stream_index"])
-                            setaudiotrack(EmbySession.config,audio_index)
-                    except:
-                        pass
-                    if EmbySession.config["TV"]==True:
-                        logging.info ('Cambiamos HDMI de la TV')
+
+                    with startup_timer.measure_step("apply_resume_position"):
+                        if params["auto_resume"] <= 0:
+                            playticks = 0
+                        else:
+                            playticks = params["auto_resume"]
+
+                        setplaytime(EmbySession.config, playticks)
+
+                        if EmbySession.config["DebugLevel"] > 0:
+                            print("Se restablece la reproduccion en " + str(playticks))
+
+                    with startup_timer.measure_step("apply_audio_track"):
                         try:
-                            result = tv_change_hdmi(EmbySession.config)
-                            if EmbySession.config["DebugLevel"]>0: print(result)
-                            logging.info ('Resultado: %s',str(result))
+                            if params["audio_stream_index"]:
+                                audio_index = EmbySession.get_xnoppo_audio_index(
+                                    params["ControllingUserId"],
+                                    params["item_id"],
+                                    params["audio_stream_index"],
+                                )
+                                setaudiotrack(EmbySession.config, audio_index)
                         except:
                             pass
+
+                    if EmbySession.config["TV"] == True:
+                        with startup_timer.measure_step("switch_tv_to_oppo_input"):
+                            logging.info("Cambiamos HDMI de la TV")
+                            try:
+                                result = tv_change_hdmi(EmbySession.config)
+                                if EmbySession.config["DebugLevel"] > 0:
+                                    print(result)
+                                logging.info("Resultado: %s", str(result))
+                            except:
+                                pass
+
                         if scripterx:
-                            response_data5 = EmbySession.playback_stop(params["Session_id"])
-                            if EmbySession.config["DebugLevel"]>0: print (response_data5)
+                            with startup_timer.measure_step(
+                                "stop_emby_client_after_tv_handoff"
+                            ):
+                                response_data5 = EmbySession.playback_stop(
+                                    params["Session_id"]
+                                )
+
+                            if EmbySession.config["DebugLevel"] > 0:
+                                print(response_data5)
                     else:
                         if scripterx==True:
                             EmbySession.send_message2(params["Session_id"], EmbySession.lang["x_msg_init_play"] + movie)
                         logging.info('Reprodución iniciada: %s',movie)
                     if EmbySession.config["AV"]==True:
                         if EmbySession.config["DebugLevel"]>0: print("AV")
-                        logging.info ('Cambiamos HDMI del AV')
-                        try:
-                            time.sleep(EmbySession.config["av_delay_hdmi"])
-                            result = av_change_hdmi(EmbySession.config)
-                            if EmbySession.config["DebugLevel"]>0: print(result)
-                            logging.info ('Resultado: %s',str(result))
-                        except:
-                            pass
-                    response_data_gb = getglobalinfo(EmbySession.config)
-                    log_oppo_qpl_state(EmbySession.config, "before_getglobalinfo_loop", changes_only=True)
+
+                        with startup_timer.measure_step("switch_av_to_oppo_input"):
+                            logging.info("Cambiamos HDMI del AV")
+                            try:
+                                time.sleep(EmbySession.config["av_delay_hdmi"])
+                                result = av_change_hdmi(EmbySession.config)
+                                if EmbySession.config["DebugLevel"] > 0:
+                                    print(result)
+                                logging.info("Resultado: %s", str(result))
+                            except:
+                                pass
+
+                    with startup_timer.measure_step(
+                        "initial_global_info_before_progress_loop"
+                    ):
+                        response_data_gb = getglobalinfo(EmbySession.config)
+                        log_oppo_qpl_state(
+                            EmbySession.config,
+                            "before_getglobalinfo_loop",
+                            changes_only=True,
+                        )
                     cur_time=0
                     total_time=0
                     playingtime={}
@@ -1040,7 +1209,12 @@ def playto_file(EmbySession,data,scripterx=False):
                     last_valid_total_time = 0
                     ispaused = False
                     ismuted = False
-                    apply_selected_subtitle_track(EmbySession, params)
+                    with startup_timer.measure_step("apply_subtitle_track"):
+                        apply_selected_subtitle_track(
+                            EmbySession, params, startup_timer=startup_timer
+                        )
+                    startup_timer.log_summary()
+
                     while response_data_gb.find('"is_video_playing":true') > 0:
                         time.sleep(1)
                         if EmbySession.playstate != 'Replay':
