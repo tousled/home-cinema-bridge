@@ -13,7 +13,7 @@ from .devices.oppo.control_api_client import OppoControlApiClient
 from .devices.oppo.playback_state_waiter import wait_until_oppo_reports_active_playback
 from .devices.oppo.playback_status_client import OppoPlaybackStatusClient
 from .devices.oppo.mounted_share import parse_mounted_share_response, OppoMountedShare
-from .oppo_autoscript import umount_shared_folder
+from .oppo_autoscript import unmount_oppo_path
 from .playback.timing import PlaybackStartupTimer
 
 _qpl_last_observed_states = {}
@@ -257,20 +257,21 @@ def playnormalfile(mounted_share: OppoMountedShare, filename, index, config):
     return response_text
 
 
-def checkfolderhasbdmv(config, folder, nfs):
+def checkfolderhasbdmv(config, mounted_share: OppoMountedShare, relative_folder_path: str):
     if config["DebugLevel"] == 2:
         print("*** checkfolderhasbdmv ***")
 
     logging.debug("*** checkfolderhasbdmv ***")
 
-    response_text = oppo_control_api_client(config).check_folder_has_bdmv(
-        folder=folder,
-        nfs=nfs,
+    response_text = oppo_control_api_client(config).mounted_folder_contains_blu_ray_structure(
+        mounted_share=mounted_share,
+        relative_folder_path=relative_folder_path,
         timeout=config["timeout_oppo_playitem"],
     )
 
     if config["DebugLevel"] == 2:
         print("*** Fin checkfolderhasbdmv ***")
+        print(response_text)
 
     logging.debug("*** Checkfolderhasbdmv Response: %s", response_text)
     return response_text
@@ -958,7 +959,7 @@ def playother(EmbySession, data, scripterx=False):
         return
 
     if Container == "bluray":
-        response_data8 = checkfolderhasbdmv(EmbySession.config, fichero, nfs)
+        response_data8 = checkfolderhasbdmv(EmbySession.config, mounted_share, fichero)
     else:
         response_data8 = playnormalfile(
             mounted_share,
@@ -1199,7 +1200,7 @@ def playto_file(EmbySession, data, scripterx=False):
             with startup_timer.measure_step("start_oppo_playback"):
                 if container == "bluray":
                     response_data8 = checkfolderhasbdmv(
-                        EmbySession.config, fichero, nfs
+                        config=EmbySession.config, mounted_share=mounted_share, relative_folder_path=fichero
                     )
                 else:
                     response_data8 = playnormalfile(mounted_share, fichero, "0",  EmbySession.config)
@@ -1532,10 +1533,10 @@ def playto_file(EmbySession, data, scripterx=False):
                 EmbySession.send_user_message(
                     params["ControllingUserId"], error_message, 5000
                 )
-        if EmbySession.config["Autoscript"] == True:
-            result = umount_shared_folder(EmbySession.config)
+        if EmbySession.config["Autoscript"] and mounted_share is not None:
+            result = unmount_oppo_path(host=EmbySession.config["Oppo_IP"], port=EmbySession.config.get("OPPO_Port", 23), mount_path=mounted_share.mount_path, debug=EmbySession.config["DebugLevel"] > 0, timeout=EmbySession.config["timeout_oppo_mount"])
             if EmbySession.config["DebugLevel"] > 0:
-                print("Unmount result: " + result)
+                print(f"Unmount result: {result}")
         if (
             EmbySession.config["AV"] == True
             and EmbySession.config["AV_Always_ON"] == False

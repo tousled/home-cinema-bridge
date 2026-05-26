@@ -156,15 +156,23 @@ class OppoControlApiClient:
             error='{"success":false,"retInfo":"Timeout in Play Request"}',
         )
 
-    def check_folder_has_bdmv(
+    
+    def mounted_folder_contains_blu_ray_structure(
         self,
-        folder: str,
+        mounted_share: OppoMountedShare,
+        relative_folder_path: str,
         *,
-        nfs: bool,
         timeout: int | float,
     ) -> str:
-        mount_prefix = "/mnt/nfs1" if nfs else "/mnt/cifs1"
-        payload = f'{{"folderpath":"{mount_prefix}/{urllib.parse.quote(folder)}"}}'
+        mounted_root = mounted_share.mount_path.rstrip("/")
+        relative_path = relative_folder_path.strip("/")
+
+        encoded_relative_path = urllib.parse.quote(relative_path, safe="/")
+        folder_path = (
+            mounted_root if not encoded_relative_path else f"{mounted_root}/{encoded_relative_path}"
+        )
+
+        payload = json.dumps({"folderpath": folder_path})
 
         return self._get_text_or_error(
             "checkfolderhasBDMV",
