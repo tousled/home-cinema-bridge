@@ -1,6 +1,7 @@
 import logging
 import socket
 import time
+import shlex
 
 
 IAC = 255
@@ -84,31 +85,31 @@ def _read_available(sock, timeout):
     return data
 
 
-def umount_shared_folder(config):
-    logging.info('*** umountSharedFolder ***')
+def unmount_oppo_path(*, host: str, port: int = 23, mount_path: str, debug: bool = False, timeout: int | float = 10) -> bool:
+    logging.info('*** unmount OPPO path %s ***', mount_path)
 
-    host = config["Oppo_IP"]
-    port = int(config.get("OPPO_Port", 23))
-    user = "root"
+    if not mount_path.startswith(("/mnt/nfs", "/mnt/cifs")):
+        raise ValueError(f"Refusing to unmount unexpected OPPO path: {mount_path}")
 
     try:
-        with socket.create_connection((host, port), timeout=10) as session:
-            output = _read_until(session, b"login:", 10)
+        with socket.create_connection((host, port), timeout=timeout) as session:
+            output = _read_until(session, b"login:", timeout)
 
-            session.sendall(user.encode("ascii") + b"\n")
+            session.sendall(b"root\n")
             time.sleep(0.2)
 
-            session.sendall(b"umount /mnt/cifs1\n")
+            command = f"umount {shlex.quote(mount_path)}\n"
+            session.sendall(command.encode("ascii"))
             session.sendall(b"ls\n")
             session.sendall(b"exit\n")
 
             output += _read_available(session, 3)
 
-        if config["DebugLevel"] > 0:
+        if debug:
             print(output.decode("ascii", errors="replace"))
 
-        return "OK"
+        return True
 
     except Exception:
-        logging.exception("ERROR unmounting shared OPPO folder")
-        return "ERROR unmounting"
+        logging.exception("ERROR unmounting OPPO path: %s", mount_path)
+        return False
