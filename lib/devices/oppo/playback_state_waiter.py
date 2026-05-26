@@ -22,7 +22,7 @@ def wait_until_oppo_reports_active_playback(
     timeout: int | float,
     interval: float = 0.5,
     query_state: Callable[[], OppoCommandResult] | None = None,
-    on_playback_wait: Callable[[int], None] | None = None,
+    on_playback_waiting: Callable[[int], None] | None = None,
 ) -> PlaybackStartupWaitResult:
     """
     Wait until OPPO QPL reports an ACTIVE state.
@@ -71,8 +71,8 @@ def wait_until_oppo_reports_active_playback(
                 exc,
             )
 
-        if on_playback_wait is not None:
-            on_playback_wait(attempts)
+        if on_playback_waiting is not None:
+            on_playback_waiting(attempts)
 
         time.sleep(interval)
 

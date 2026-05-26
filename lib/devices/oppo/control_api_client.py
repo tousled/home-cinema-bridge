@@ -1,9 +1,11 @@
+import json
 import logging
 import urllib.parse
 from dataclasses import dataclass
 
 import requests
 
+from lib.devices.oppo.mounted_share import OppoMountedShare
 
 OPPO_HTTP_PORT = 436
 
@@ -125,27 +127,31 @@ class OppoControlApiClient:
 
     def play_normal_file(
         self,
-        server: str,
+        mounted_share: OppoMountedShare,
         filename: str,
         index: str,
-        *,
-        nfs: bool,
         timeout: int | float,
     ) -> str:
-        mount_prefix = "/mnt/nfs1" if nfs else "/mnt/cifs1"
+        file_path = f"{mounted_share.mount_path.rstrip('/')}/{filename}"
 
         payload = urllib.parse.quote(
-            f'"path":"{mount_prefix}/{filename}",'
-            f'"index":{index},'
-            f'"type":1,'
-            f'"appDeviceType":2,'
-            f'"extraNetPath":"{server}",'
-            f'"playMode":0'
+            json.dumps(
+                {
+                    "path": file_path,
+                    "index": int(index),
+                    "type": 1,
+                    "appDeviceType": 2,
+                    "extraNetPath": mounted_share.server,
+                    "playMode": 0,
+                },
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
         )
 
         return self._get_text_or_error(
             "playnormalfile",
-            f"{{{payload}}}",
+            payload,
             timeout=timeout,
             error='{"success":false,"retInfo":"Timeout in Play Request"}',
         )
