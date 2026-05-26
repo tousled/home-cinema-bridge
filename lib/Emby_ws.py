@@ -263,18 +263,30 @@ class XnoppoWs(threading.Thread):
                             except:
                                 playstate = {}
 
+
+                            requested_start_ticks = playstate.get("PositionTicks")
                             data2 = {
                                 "ItemIds": [int(item_data["NowPlayingItem"]["Id"])],
                                 "StartIndex": 0,
-                                "StartPositionTicks": userdata["PlaybackPositionTicks"],
                                 "MediaSourceId": playstate.get("MediaSourceId", ""),
-                                "AudioStreamIndex": playstate.get("AudioStreamIndex", 1),
-                                "SubtitleStreamIndex": playstate.get("SubtitleStreamIndex", -1),
+                                "AudioStreamIndex": playstate.get(
+                                    "AudioStreamIndex", 1
+                                ),
+                                "SubtitleStreamIndex": playstate.get(
+                                    "SubtitleStreamIndex", -1
+                                ),
                                 "ControllingUserId": item_data["UserId"],
                                 "SessionID": item_data["Id"],
                                 "DeviceName": item_data["DeviceName"],
-                                "Device_Id": self.ws_config["MonitoredDevice"]
+                                "Device_Id": self.ws_config["MonitoredDevice"],
                             }
+
+                            if requested_start_ticks is not None:
+                                data2["StartPositionTicks"] = requested_start_ticks
+                            else:
+                                data2["SavedPlaybackPositionTicks"] = userdata.get(
+                                    "PlaybackPositionTicks", 0
+                                )
 
                             if self.ws_config.get("DebugLevel", 0) > 0:
                                 print(

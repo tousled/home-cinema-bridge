@@ -88,7 +88,7 @@ def _build_qpl_query(config: dict) -> Callable[[], OppoCommandResult]:
     client = OppoPlaybackStatusClient(
         host=config["Oppo_IP"],
         port=int(config.get("OPPO_Port", 23)),
-        timeout=float(config.get("oppo_control_api_check_timeout", 3)),
+        timeout=float(config.get("timeout_oppo_conection", 3)),
     )
 
     return client.query_playback_state

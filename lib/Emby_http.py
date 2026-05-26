@@ -51,32 +51,43 @@ class EmbyHttp(threading.Thread):
 #        print(response.text)
         return response.json()
 
-    def process_data(self,data):
-        startat = data.get('StartPositionTicks', -1)
-        item_ids = data['ItemIds']
+    def process_data(self, data):
+        startat = data.get("StartPositionTicks")
+
+        if startat is None:
+            startat = data.get("SavedPlaybackPositionTicks")
+
+        if startat is None:
+            startat = -1
+
+        startat = int(startat)
+
+        item_ids = data["ItemIds"]
         media_source_id = data.get("MediaSourceId", "")
         subtitle_stream_index = data.get("SubtitleStreamIndex", -1)
         audio_stream_index = data.get("AudioStreamIndex", 1)
         start_index = data.get("StartIndex", 0)
-        params = {}
-        if self.config["DebugLevel"]>0: print(len(item_ids))
+
+        if self.config["DebugLevel"] > 0:
+            print(len(item_ids))
+
         if len(item_ids) > 0:
-             item_ids = item_ids[0]
+            item_ids = item_ids[0]
+
         if start_index > 0 and start_index < len(item_ids):
             item_ids = item_ids[start_index:]
-        #if len(item_ids) == 1:
-        #     item_ids = item_ids[0]
-        if startat <0:
-            iteminfo=self.get_item_info(data.get("ControllingUserId",""),item_ids)
-            #print(iteminfo)
-            startat = iteminfo["UserData"]["PlaybackPositionTicks"]                            
+
+        if startat < 0:
+            iteminfo = self.get_item_info(data.get("ControllingUserId", ""), item_ids)
+            startat = int(iteminfo.get("UserData", {}).get("PlaybackPositionTicks", 0))
+
         params = {}
         params["item_id"] = item_ids
         params["auto_resume"] = startat
         params["media_source_id"] = media_source_id
         params["subtitle_stream_index"] = subtitle_stream_index
         params["audio_stream_index"] = audio_stream_index
-        params["ControllingUserId"]= data.get("ControllingUserId", "")
+        params["ControllingUserId"] = data.get("ControllingUserId", "")
         params["Session_id"] = data.get("SessionID", None)
         params["DeviceName"] = data.get("DeviceName", "")
         params["Device_Id"] = data.get("Device_Id", "")
@@ -91,7 +102,8 @@ class EmbyHttp(threading.Thread):
                 f"subtitle={params.get('subtitle_stream_index')} | "
                 f"device={params.get('DeviceName')}"
             )
-        return(params)
+
+        return params
 
     def playnow(self,data):
 
@@ -187,7 +199,6 @@ class EmbyHttp(threading.Thread):
 
         return response
 
-        user_info["User"]["Id"]
 
     def playback_stop(self,session_id):
 
@@ -310,25 +321,6 @@ class EmbyHttp(threading.Thread):
         return response.text
 
 
-    def set_watched(item_id, watched_status, config, user_info):
-
-        url = "{server}/emby/Users/{userid}/PlayedItems/" + item_id
-
-        if url.find("{server}") != -1:
-            server = config["emby_server"]
-            url = url.replace("{server}", server)
-
-        if url.find("{userid}") != -1:
-            user_id = user_info["User"]["Id"]
-            url = url.replace("{userid}", user_id)
-
-        headers = get_headers(user_info)
-
-        if watched_status:
-            requests.post(url, headers=headers)
-        else:
-            requests.delete(url, headers=headers)
-
     def send_user_message(self,user_id,message,timeout=3500):
         url = ('{server}/emby/Sessions?ControllableByUserId=' + user_id)
         response_data = self.get_ulr_data(url, self.config, self.user_info)
@@ -340,23 +332,6 @@ class EmbyHttp(threading.Thread):
            self.send_message2(item_data["Id"],message,timeout)
         return item_data
 
-    def get_session_info(self,device_id):
-        url = ('{server}/emby/Sessions?DeviceId=' + device_id)
-        response_data = self.get_ulr_data(url, self.config, self.user_info)
-        item_list = json.loads(response_data)
-        logging.debug('Session_Info Response Data: %s',response_data)
-        for item in item_list:
-           item_data = {}
-           item_data["Id"] = item["Id"]
-           item_data["Client"] = item["Client"]
-           item_data["DeviceName"] = item["DeviceName"]
-           item_data["NowPlayingItem"] = item["NowPlayingItem"]
-           logging.info("Session ID             : %s " % item_data["Id"])
-           logging.info("Client                 : %s " % item_data["Client"])
-           logging.info("DeviceName             : %s " % item_data["DeviceName"])
-           logging.info("Path                   : %s " % item_data["NowPlayingItem"]["Path"])
-           logging.info("-----------------------------------------------------------\n")
-        return item_data
 
     def get_session_user_info(self,user_id,device_id):
             url = ('{server}/emby/Sessions?ControllableByUserId=' + str(user_id) + '&DeviceID=' + str(device_id))

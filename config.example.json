@@ -3,7 +3,7 @@
     "user_name": "",
     "output_path": "backup",
     "Oppo_IP": "",
-    "oppo_control_api_check_timeout": 10,
+    "timeout_oppo_conection": 10,
     "timeout_oppo_playitem": 30,
     "Autoscript": false,
     "Always_ON": true,
