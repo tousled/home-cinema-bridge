@@ -1125,6 +1125,15 @@ def playto_file(EmbySession, data, scripterx=False):
                         except:
                             pass
 
+                if EmbySession.config["TV"] == True and scripterx:
+                    with startup_timer.measure_step(
+                        "stop_emby_client_after_tv_handoff"
+                    ):
+                        response_data5 = EmbySession.playback_stop(params["Session_id"])
+
+                    if EmbySession.config["DebugLevel"] > 0:
+                        print(response_data5)
+
                 if EmbySession.config["AV"] == True:
                     if EmbySession.config["DebugLevel"] > 0:
                         print("AV")
@@ -1138,15 +1147,6 @@ def playto_file(EmbySession, data, scripterx=False):
                             logging.info("Resultado: %s", str(result))
                         except:
                             pass
-
-                if EmbySession.config["TV"] == True and scripterx:
-                    with startup_timer.measure_step(
-                        "stop_emby_client_after_tv_handoff"
-                    ):
-                        response_data5 = EmbySession.playback_stop(params["Session_id"])
-
-                    if EmbySession.config["DebugLevel"] > 0:
-                        print(response_data5)
 
                 timeout = EmbySession.config["timeout_oppo_playitem"]
                 playback_start_poll_interval = 0.5
