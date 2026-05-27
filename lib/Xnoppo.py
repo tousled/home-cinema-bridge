@@ -1114,6 +1114,40 @@ def playto_file(EmbySession, data, scripterx=False):
             log_oppo_qpl_state(EmbySession.config, "after_playnormalfile")
 
             if playback_start_result.is_started:
+                if EmbySession.config["TV"] == True:
+                    with startup_timer.measure_step("switch_tv_to_oppo_input"):
+                        logging.info("Cambiamos HDMI de la TV")
+                        try:
+                            result = tv_change_hdmi(EmbySession.config)
+                            if EmbySession.config["DebugLevel"] > 0:
+                                print(result)
+                            logging.info("Resultado: %s", str(result))
+                        except:
+                            pass
+
+                if EmbySession.config["AV"] == True:
+                    if EmbySession.config["DebugLevel"] > 0:
+                        print("AV")
+
+                    with startup_timer.measure_step("switch_av_to_oppo_input"):
+                        logging.info("Cambiamos HDMI del AV")
+                        try:
+                            result = av_change_hdmi(EmbySession.config)
+                            if EmbySession.config["DebugLevel"] > 0:
+                                print(result)
+                            logging.info("Resultado: %s", str(result))
+                        except:
+                            pass
+
+                if EmbySession.config["TV"] == True and scripterx:
+                    with startup_timer.measure_step(
+                        "stop_emby_client_after_tv_handoff"
+                    ):
+                        response_data5 = EmbySession.playback_stop(params["Session_id"])
+
+                    if EmbySession.config["DebugLevel"] > 0:
+                        print(response_data5)
+
                 timeout = EmbySession.config["timeout_oppo_playitem"]
                 playback_start_poll_interval = 0.5
                 last_notified_second = -1
@@ -1209,42 +1243,7 @@ def playto_file(EmbySession, data, scripterx=False):
                         except:
                             pass
 
-                    if EmbySession.config["AV"] == True:
-                        if EmbySession.config["DebugLevel"] > 0:
-                            print("AV")
-
-                        with startup_timer.measure_step("switch_av_to_oppo_input"):
-                            logging.info("Cambiamos HDMI del AV")
-                            try:
-                                result = av_change_hdmi(EmbySession.config)
-                                if EmbySession.config["DebugLevel"] > 0:
-                                    print(result)
-                                logging.info("Resultado: %s", str(result))
-                            except:
-                                pass
-
-                    if EmbySession.config["TV"] == True:
-                        with startup_timer.measure_step("switch_tv_to_oppo_input"):
-                            logging.info("Cambiamos HDMI de la TV")
-                            try:
-                                result = tv_change_hdmi(EmbySession.config)
-                                if EmbySession.config["DebugLevel"] > 0:
-                                    print(result)
-                                logging.info("Resultado: %s", str(result))
-                            except:
-                                pass
-
-                        if scripterx:
-                            with startup_timer.measure_step(
-                                "stop_emby_client_after_tv_handoff"
-                            ):
-                                response_data5 = EmbySession.playback_stop(
-                                    params["Session_id"]
-                                )
-
-                            if EmbySession.config["DebugLevel"] > 0:
-                                print(response_data5)
-                    else:
+                    if EmbySession.config["TV"] != True:
                         if scripterx == True:
                             EmbySession.send_message2(
                                 params["Session_id"],
