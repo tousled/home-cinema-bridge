@@ -1209,6 +1209,20 @@ def playto_file(EmbySession, data, scripterx=False):
                         except:
                             pass
 
+                    if EmbySession.config["AV"] == True:
+                        if EmbySession.config["DebugLevel"] > 0:
+                            print("AV")
+
+                        with startup_timer.measure_step("switch_av_to_oppo_input"):
+                            logging.info("Cambiamos HDMI del AV")
+                            try:
+                                result = av_change_hdmi(EmbySession.config)
+                                if EmbySession.config["DebugLevel"] > 0:
+                                    print(result)
+                                logging.info("Resultado: %s", str(result))
+                            except:
+                                pass
+
                     if EmbySession.config["TV"] == True:
                         with startup_timer.measure_step("switch_tv_to_oppo_input"):
                             logging.info("Cambiamos HDMI de la TV")
@@ -1237,20 +1251,6 @@ def playto_file(EmbySession, data, scripterx=False):
                                 EmbySession.lang["x_msg_init_play"] + movie,
                             )
                         logging.info("Reprodución iniciada: %s", movie)
-                    if EmbySession.config["AV"] == True:
-                        if EmbySession.config["DebugLevel"] > 0:
-                            print("AV")
-
-                        with startup_timer.measure_step("switch_av_to_oppo_input"):
-                            logging.info("Cambiamos HDMI del AV")
-                            try:
-                                time.sleep(EmbySession.config["av_delay_hdmi"])
-                                result = av_change_hdmi(EmbySession.config)
-                                if EmbySession.config["DebugLevel"] > 0:
-                                    print(result)
-                                logging.info("Resultado: %s", str(result))
-                            except:
-                                pass
 
                     with startup_timer.measure_step(
                         "initial_global_info_before_progress_loop"
