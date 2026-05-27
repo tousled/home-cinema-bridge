@@ -1,20 +1,32 @@
-import logging
-import urllib.parse
-import requests
 import json
+import logging
 import os
 import socket
 import time
+import urllib.parse
 
-from .Xnoppo_AVR import av_check_power, av_power_off, av_change_hdmi
-from .Xnoppo_TV import tv_change_hdmi, tv_set_prev
+import requests
+
 from .devices.oppo.control_api_activation import OppoControlApiActivator
 from .devices.oppo.control_api_client import OppoControlApiClient
+from .devices.oppo.legacy_network_compat import (
+    LoginNFS,
+    LoginSambaWithOutID,
+    checkfolderhasbdmv,
+    playnormalfile,
+    smbtrick,
+)
+from .devices.oppo.mounted_share import OppoMountedShare, parse_mounted_share_response
+from .devices.oppo.network_playback_starter import (
+    OppoNetworkFolder,
+    OppoNetworkPlaybackStarter,
+)
 from .devices.oppo.playback_state_waiter import wait_until_oppo_reports_active_playback
 from .devices.oppo.playback_status_client import OppoPlaybackStatusClient
-from .devices.oppo.mounted_share import parse_mounted_share_response, OppoMountedShare
 from .oppo_autoscript import unmount_oppo_path
 from .playback.timing import PlaybackStartupTimer
+from .Xnoppo_AVR import av_change_hdmi, av_check_power, av_power_off
+from .Xnoppo_TV import tv_change_hdmi, tv_set_prev
 
 _qpl_last_observed_states = {}
 
@@ -225,58 +237,6 @@ def mountSharedNFSFolder(server, folder, Username, Password, config):
     return response_text
 
 
-def LoginNFS(config, server):
-    logging.debug("LoginNFS")
-    response_text = oppo_control_api_client(config).login_nfs_server(server)
-
-    if config["DebugLevel"] == 2:
-        print("*** LoginNFS Response: " + response_text)
-
-    logging.debug("*** LoginNFS Response: %s", response_text)
-    return response_text
-
-
-def playnormalfile(mounted_share: OppoMountedShare, filename, index, config):
-    if config["DebugLevel"] == 2:
-        print("*** playnormalfile ***")
-
-    logging.debug("*** playnormalfile ***")
-
-    response_text = oppo_control_api_client(config).play_normal_file(
-        mounted_share=mounted_share,
-        filename=filename,
-        index=index,
-        timeout=config["timeout_oppo_playitem"],
-    )
-
-    if config["DebugLevel"] == 2:
-        print("*** Fin playnormalfile ***")
-        print(response_text)
-
-    logging.debug("*** Playnormalfile Response: %s", response_text)
-    return response_text
-
-
-def checkfolderhasbdmv(config, mounted_share: OppoMountedShare, relative_folder_path: str):
-    if config["DebugLevel"] == 2:
-        print("*** checkfolderhasbdmv ***")
-
-    logging.debug("*** checkfolderhasbdmv ***")
-
-    response_text = oppo_control_api_client(config).mounted_folder_contains_blu_ray_structure(
-        mounted_share=mounted_share,
-        relative_folder_path=relative_folder_path,
-        timeout=config["timeout_oppo_playitem"],
-    )
-
-    if config["DebugLevel"] == 2:
-        print("*** Fin checkfolderhasbdmv ***")
-        print(response_text)
-
-    logging.debug("*** Checkfolderhasbdmv Response: %s", response_text)
-    return response_text
-
-
 def convert(s):
     try:
         return s.group(0).encode("ISO-8859-1").decode("utf8")
@@ -321,7 +281,7 @@ def getfilelist(config, folder, mounted_share: OppoMountedShare):
 
     response = requests.get(url, headers=headers)
     test = response.content
-    b = test.rsplit(b'\x01')
+    b = test.rsplit(b"\x01")
 
     files = []
     file = {}
@@ -332,13 +292,13 @@ def getfilelist(config, folder, mounted_share: OppoMountedShare):
     indice = 1
 
     for c in b:
-        if c.find(b'\x02') == -1:
+        if c.find(b"\x02") == -1:
             index = 0
             ult = 0
             d = c
 
             while index != -1:
-                index = c.find(b'\x00', index)
+                index = c.find(b"\x00", index)
 
                 if index == -1:
                     d = d[ult:]
@@ -360,6 +320,7 @@ def getfilelist(config, folder, mounted_share: OppoMountedShare):
 
     logging.debug("*** getfilelist Response: %s", response.text)
     return files
+
 
 def getNfsShareFolderlist(config):
     if config["DebugLevel"] == 2:
@@ -541,8 +502,8 @@ def navigate_folder(path, config):
 
     return getfilelist(config, last_folder, mounted_share)
 
-            
-def setplaytime(config,playticks):
+
+def setplaytime(config, playticks):
     logging.debug("setplaytime")
     secs_total = playticks / 10000000
     h = secs_total // 3600
@@ -561,54 +522,6 @@ def setplaytime(config,playticks):
     return response.text
 
 
-def smbtrick(path, config):
-    path = path.replace("\\\\", "\\")
-    path = path.replace("\\", "/")
-    path = path.replace("//", "/")
-    devices = getdevicelist(config)
-    device_list = json.loads(devices)
-    word = "/"
-    inicio = path.find(word)
-    inicio = inicio + 1
-    final = path.find(word, inicio, len(path))
-    servidor = path[inicio:final]
-    final = final + 1
-    result = path.find(word, final, len(path))
-    carpeta = path[final:result]
-    response_login = LoginSambaWithOutID(config, servidor)
-    response = json.loads(response_login)
-    if response["success"] == True:
-        files = getSambaShareFolderlist(config)
-        for file in files:
-            if file["Foldername"] != "..":
-                if file["Foldername"].upper() != carpeta.upper():
-                    mountSharedFolder(
-                        servidor, file["Foldername"], "", "", config, False
-                    )
-                    if config["DebugLevel"] > 0:
-                        print(servidor + "-" + file["Foldername"])
-                    return 0
-    else:
-        devices = getdevicelist(config)
-        device_list = json.loads(devices)
-        for device in device_list["devicelist"]:
-            if device["name"].upper() != servidor.upper():
-                if device["sub_type"] == "cifs":
-                    LoginSambaWithOutID(config, device["name"])
-                    files = getSambaShareFolderlist(config)
-                    for file in files:
-                        if file["Foldername"] != "..":
-                            mountSharedFolder(
-                                device["name"],
-                                file["Foldername"],
-                                "",
-                                "",
-                                config,
-                                False,
-                            )
-                            return 0
-
-
 def setaudiotrack(config, audio_index):
     logging.debug("setaudiotrack")
     url = (
@@ -623,17 +536,6 @@ def setaudiotrack(config, audio_index):
     response = requests.get(url, headers=headers)
     logging.debug("*** setaudiotrack Response: %s", response.text)
     return response.text
-
-
-def LoginSambaWithOutID(config, server):
-    logging.debug("LoginSambaWithOutID")
-    response_text = oppo_control_api_client(config).login_samba_without_id(server)
-
-    if config["DebugLevel"] == 2:
-        print("*** LoginSambaWithOutID Response: " + response_text)
-
-    logging.debug("*** LoginSambaWithOutID Response: %s", response_text)
-    return response_text
 
 
 def getmaxaudiotrack(config):
@@ -1164,15 +1066,21 @@ def playto_file(EmbySession, data, scripterx=False):
             if EmbySession.config["DebugLevel"] > 0:
                 print(device_list)
 
-            nfs = resolve_server_is_nfs(EmbySession.config, device_list, servidor)
+            network_playback_starter = OppoNetworkPlaybackStarter(EmbySession.config)
+            network_folder_protocol = (
+                network_playback_starter.resolve_network_folder_protocol(
+                    device_list=device_list,
+                    server_name=servidor,
+                )
+            )
+            network_folder = OppoNetworkFolder(
+                server_name=servidor,
+                folder_path=carpeta,
+                protocol=network_folder_protocol,
+            )
 
         with startup_timer.measure_step("login_share_protocol"):
-            if nfs:
-                LoginNFS(EmbySession.config, servidor)
-                getNfsShareFolderlist(EmbySession.config)
-            else:
-                LoginSambaWithOutID(EmbySession.config, servidor)
-                getSambaShareFolderlist(EmbySession.config)
+            network_playback_starter.prepare_network_folder_access(network_folder)
         with startup_timer.measure_step("legacy_wait_when_oppo_not_always_on"):
             if EmbySession.config["Always_ON"] == False:
                 time.sleep(5)
@@ -1181,34 +1089,31 @@ def playto_file(EmbySession, data, scripterx=False):
             getsetupmenu(EmbySession.config)
 
         if scripterx:
-            EmbySession.send_message2(params["Session_id"], EmbySession.lang["x_msg_wait_for_mount"], 1999)
+            EmbySession.send_message2(
+                params["Session_id"], EmbySession.lang["x_msg_wait_for_mount"], 1999
+            )
         else:
-            EmbySession.send_user_message(params["ControllingUserId"], EmbySession.lang["x_msg_wait_for_mount"], 1999)
+            EmbySession.send_user_message(
+                params["ControllingUserId"],
+                EmbySession.lang["x_msg_wait_for_mount"],
+                1999,
+            )
 
         with startup_timer.measure_step("mount_shared_folder"):
-            if nfs:
-                response_data7 = mountSharedNFSFolder(
-                    servidor, carpeta, "", "", EmbySession.config
-                )
-            else:
-                response_data7 = mountSharedFolder(
-                    servidor, carpeta, "", "", EmbySession.config
-                )
+            mount_result = network_playback_starter.mount_network_folder(network_folder)
+            mounted_share = mount_result.mounted_share
 
-        response_mount, mounted_share = parse_mounted_share_response(response_data7, server=servidor, folder=carpeta, is_nfs=nfs)
-        if mounted_share is not None:
+        if mount_result.is_mounted:
             with startup_timer.measure_step("start_oppo_playback"):
-                if container == "bluray":
-                    response_data8 = checkfolderhasbdmv(
-                        config=EmbySession.config, mounted_share=mounted_share, relative_folder_path=fichero
-                    )
-                else:
-                    response_data8 = playnormalfile(mounted_share, fichero, "0",  EmbySession.config)
+                playback_start_result = network_playback_starter.start_playback(
+                    mounted_share=mounted_share,
+                    filename=fichero,
+                    container=container,
+                )
 
-            response_play = json.loads(response_data8)
             log_oppo_qpl_state(EmbySession.config, "after_playnormalfile")
 
-            if response_play["success"] == True:
+            if playback_start_result.is_started:
                 timeout = EmbySession.config["timeout_oppo_playitem"]
                 playback_start_poll_interval = 0.5
                 last_notified_second = -1
@@ -1230,12 +1135,18 @@ def playto_file(EmbySession, data, scripterx=False):
                         return
 
                     last_notified_second = elapsed_seconds
-                    message = EmbySession.lang["x_msg_wait_for_play"] + str(elapsed_seconds) + "s"
+                    message = (
+                        EmbySession.lang["x_msg_wait_for_play"]
+                        + str(elapsed_seconds)
+                        + "s"
+                    )
 
                     if scripterx:
                         EmbySession.send_message2(params["Session_id"], message, 999)
                     else:
-                        EmbySession.send_user_message(params["ControllingUserId"], message, 999)
+                        EmbySession.send_user_message(
+                            params["ControllingUserId"], message, 999
+                        )
 
                 with startup_timer.measure_step(
                     "wait_until_oppo_reports_active_playback"
@@ -1488,10 +1399,7 @@ def playto_file(EmbySession, data, scripterx=False):
                         except:
                             pass
             else:
-                try:
-                    error = response_play["msg"]
-                except:
-                    error = "No hay mas info"
+                error = playback_start_result.error_message
                 if scripterx:
                     EmbySession.send_message2(
                         params["Session_id"],
@@ -1511,10 +1419,7 @@ def playto_file(EmbySession, data, scripterx=False):
                         5000,
                     )
         else:
-            try:
-                error = response_mount["retInfo"]
-            except:
-                error = "No hay mas info"
+            error = mount_result.error_message
 
             mount_path = servidor + "/" + carpeta
             mount_path_len = len(mount_path)
@@ -1534,7 +1439,13 @@ def playto_file(EmbySession, data, scripterx=False):
                     params["ControllingUserId"], error_message, 5000
                 )
         if EmbySession.config["Autoscript"] and mounted_share is not None:
-            result = unmount_oppo_path(host=EmbySession.config["Oppo_IP"], port=EmbySession.config.get("OPPO_Port", 23), mount_path=mounted_share.mount_path, debug=EmbySession.config["DebugLevel"] > 0, timeout=EmbySession.config["timeout_oppo_mount"])
+            result = unmount_oppo_path(
+                host=EmbySession.config["Oppo_IP"],
+                port=EmbySession.config.get("OPPO_Port", 23),
+                mount_path=mounted_share.mount_path,
+                debug=EmbySession.config["DebugLevel"] > 0,
+                timeout=EmbySession.config["timeout_oppo_mount"],
+            )
             if EmbySession.config["DebugLevel"] > 0:
                 print(f"Unmount result: {result}")
         if (
