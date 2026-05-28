@@ -3,7 +3,10 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from home_cinema_bridge.devices.oppo.playback_state import OppoPlaybackCategory
+from home_cinema_bridge.devices.oppo.playback_state import (
+    OppoPlaybackCategory,
+    OppoPlaybackStatus,
+)
 from lib.devices.oppo.playback_status_client import OppoCommandResult, OppoPlaybackStatusClient
 
 
@@ -12,7 +15,7 @@ class PlaybackStartupWaitResult:
     started: bool
     attempts: int
     elapsed_seconds: float
-    status: str
+    status: OppoPlaybackStatus
     category: OppoPlaybackCategory
     raw_response: str
 
@@ -116,6 +119,6 @@ def _unknown_result() -> OppoCommandResult:
         command="QPL",
         raw_response="",
         ok=False,
-        status="UNKNOWN",
+        status=OppoPlaybackStatus.UNKNOWN,
         category=OppoPlaybackCategory.UNKNOWN,
     )

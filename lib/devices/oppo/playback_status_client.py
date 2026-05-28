@@ -5,7 +5,8 @@ from dataclasses import dataclass
 from home_cinema_bridge.devices.oppo.playback_state import (
     OppoPlaybackCategory,
     classify_oppo_status,
-    normalize_oppo_status,
+    OppoPlaybackStatus,
+    parse_oppo_playback_status,
 )
 
 
@@ -14,7 +15,7 @@ class OppoCommandResult:
     command: str
     raw_response: str
     ok: bool
-    status: str
+    status: OppoPlaybackStatus
     category: OppoPlaybackCategory
 
 
@@ -41,7 +42,7 @@ class OppoPlaybackStatusClient:
     def query(self, command: str) -> OppoCommandResult:
         normalized_command = self._normalize_command(command)
         raw_response = self._send(normalized_command)
-        status = normalize_oppo_status(raw_response)
+        status = parse_oppo_playback_status(raw_response)
 
         return OppoCommandResult(
             command=command.strip().lstrip("#").upper(),

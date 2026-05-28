@@ -44,6 +44,10 @@ class OppoControlApiClient:
     def get_playing_time(self) -> str:
         return self._get_text("getplayingtime")
 
+    def send_remote_key(self, key: str) -> str:
+        payload = urllib.parse.quote(json.dumps({"key": key}))
+        return self._get_text("sendremotekey", payload)
+
     def login_nfs_server(self, server: str) -> str:
         payload = f'{{"serverName":"{server}"}}'
         return self._get_text("loginNfsServer", payload)
