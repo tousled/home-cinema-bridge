@@ -7,31 +7,43 @@ import urllib.parse
 
 import requests
 
+from home_cinema_bridge.playback.startup import (
+    PlaybackStartupOrchestrator,
+    PlaybackOutputSwitchRequest,
+)
+from home_cinema_bridge.playback.startup.device_output_adapters import (
+    LegacyTelevisionOutput,
+    LegacyAvReceiverOutput,
+)
 from .devices.oppo.control_api_activation import OppoControlApiActivator
 from .devices.oppo.control_api_client import OppoControlApiClient
-from .devices.oppo.legacy_network_compat import (
-    LoginNFS,
-    LoginSambaWithOutID,
-    checkfolderhasbdmv,
-    playnormalfile,
-    smbtrick,
+from .devices.oppo.mounted_share import (
+    OppoMountedShare,
+    parse_mounted_share_response,
 )
-from .devices.oppo.mounted_share import OppoMountedShare, parse_mounted_share_response
 from .devices.oppo.network_playback_starter import (
     OppoNetworkFolder,
     OppoNetworkPlaybackStarter,
 )
-from .devices.oppo.playback_state_waiter import wait_until_oppo_reports_active_playback
-from .devices.oppo.playback_status_client import OppoPlaybackStatusClient
-from .oppo_autoscript import unmount_oppo_path
-from .playback.timing import PlaybackStartupTimer
-from .Xnoppo_AVR import (
-    av_change_hdmi,
-    av_check_power,
-    av_power_off,
-    av_uses_observed_input_recovery,
+from .devices.oppo.playback_state_waiter import (
+    wait_until_oppo_reports_active_playback,
 )
-from .Xnoppo_TV import tv_change_hdmi, tv_set_prev
+from .devices.oppo.playback_status_client import OppoPlaybackStatusClient
+from .devices.oppo.legacy_network_compat import (
+    checkfolderhasbdmv,
+    playnormalfile,
+    LoginNFS,
+    LoginSambaWithOutID,
+    smbtrick,
+)
+
+from home_cinema_bridge.playback.timing import PlaybackStartupTimer
+
+from .oppo_autoscript import unmount_oppo_path
+from .Xnoppo_AVR import (
+    av_power_off,
+)
+from .Xnoppo_TV import tv_set_prev
 
 _qpl_last_observed_states = {}
 
@@ -999,6 +1011,35 @@ def playother(EmbySession, data, scripterx=False):
             print("Fin Replay")
 
 
+def switch_playback_output_to_oppo(emby_session, startup_timer):
+    television = LegacyTelevisionOutput(emby_session.config)
+    av_receiver = LegacyAvReceiverOutput(emby_session.config)
+
+    orchestrator = PlaybackStartupOrchestrator(
+        television=television,
+        av_receiver=av_receiver,
+    )
+
+    request = PlaybackOutputSwitchRequest(
+        tv_input_id=str(emby_session.config.get("Source", "configured_tv_input")),
+        av_input_id=emby_session.config.get("AV_Input"),
+        tv_enabled=emby_session.config.get("TV") is True,
+        av_enabled=emby_session.config.get("AV") is True,
+    )
+
+    with startup_timer.measure_step("switch_playback_output_to_oppo"):
+        result = orchestrator.switch_playback_output_to_oppo(request)
+
+    logging.info(
+        "Playback output switch result | successful=%s | tv=%s | av_power=%s | av_input=%s",
+        result.successful,
+        result.tv_input_result.status.value,
+        result.av_power_result.status.value,
+        result.av_input_result.status.value,
+    )
+
+    return result
+
 def playto_file(EmbySession, data, scripterx=False):
     startup_timer = PlaybackStartupTimer()
     EmbySession.playstate = "Loading"
@@ -1063,39 +1104,14 @@ def playto_file(EmbySession, data, scripterx=False):
                 time.sleep(1)
                 sendremotekey("EJT", EmbySession.config)
 
-        with startup_timer.measure_step("ensure_av_power_on"):
-            if EmbySession.config["AV"] == True:
-                if EmbySession.config["DebugLevel"] > 0:
-                    print("AV POWER")
-                logging.info("Comprobamos que esta encendido el AV")
-                try:
-                    result = av_check_power(EmbySession.config)
-                    if EmbySession.config["DebugLevel"] > 0:
-                        print(result)
-                    logging.info("Resultado: %s", str(result))
-                except:
-                    pass
-
-        if EmbySession.config["TV"] == True and scripterx:
+        if EmbySession.config["TV"] is True and scripterx:
             with startup_timer.measure_step("stop_emby_client_before_device_handoff"):
                 response_data5 = EmbySession.playback_stop(params["Session_id"])
 
             if EmbySession.config["DebugLevel"] > 0:
                 print(response_data5)
 
-        if EmbySession.config["TV"] == True:
-            with startup_timer.measure_step("switch_tv_to_oppo_input"):
-                logging.info("Cambiamos HDMI de la TV")
-                try:
-                    result = tv_change_hdmi(EmbySession.config)
-                    if EmbySession.config["DebugLevel"] > 0:
-                        print(result)
-                    logging.info("Resultado: %s", str(result))
-
-                    if result == "OK":
-                        tv_handoff_completed_at = time.monotonic()
-                except:
-                    pass
+        switch_playback_output_to_oppo(EmbySession, startup_timer)
 
         with startup_timer.measure_step("refresh_setup_menu_before_mount"):
             time.sleep(1)
@@ -1184,27 +1200,6 @@ def playto_file(EmbySession, data, scripterx=False):
             log_oppo_qpl_state(EmbySession.config, "after_playnormalfile")
 
             if playback_start_result.is_started:
-                if EmbySession.config["AV"] == True:
-                    if EmbySession.config["DebugLevel"] > 0:
-                        print("AV")
-
-                    with startup_timer.measure_step("wait_before_av_handoff"):
-                        wait_for_configured_av_delay_after_tv_handoff(
-                            EmbySession.config,
-                            tv_handoff_completed_at,
-                            av_uses_observed_input_recovery(EmbySession.config),
-                        )
-
-                    with startup_timer.measure_step("switch_av_to_oppo_input"):
-                        logging.info("Cambiamos HDMI del AV")
-                        try:
-                            result = av_change_hdmi(EmbySession.config)
-                            if EmbySession.config["DebugLevel"] > 0:
-                                print(result)
-                            logging.info("Resultado: %s", str(result))
-                        except:
-                            pass
-
                 timeout = EmbySession.config["timeout_oppo_playitem"]
                 playback_start_poll_interval = 0.5
                 last_notified_second = -1

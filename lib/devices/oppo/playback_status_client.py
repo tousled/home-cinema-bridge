@@ -2,7 +2,7 @@ import socket
 import time
 from dataclasses import dataclass
 
-from lib.devices.oppo.playback_state import (
+from home_cinema_bridge.devices.oppo.playback_state import (
     OppoPlaybackCategory,
     classify_oppo_status,
     normalize_oppo_status,

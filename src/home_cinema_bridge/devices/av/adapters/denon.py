@@ -1,8 +1,8 @@
 import logging
 
-from lib.devices.av.base import BaseAvReceiver
-from lib.devices.av.input_retrier import AVInputRetrier, extract_prefixed_response
-from lib.devices.av.tcp import TcpCommandSender
+from home_cinema_bridge.devices.av.base import BaseAvReceiver
+from home_cinema_bridge.devices.av.input_retrier import AVInputRetrier, extract_prefixed_response
+from home_cinema_bridge.devices.av.tcp import TcpCommandSender
 
 DENON_INPUT_QUERY_COMMAND = "SI?\n"
 DENON_INPUT_QUERY_TIMEOUT_SECONDS = 1.0

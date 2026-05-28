@@ -3,7 +3,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from lib.devices.oppo.playback_state import OppoPlaybackCategory
+from home_cinema_bridge.devices.oppo.playback_state import OppoPlaybackCategory
 from lib.devices.oppo.playback_status_client import OppoCommandResult, OppoPlaybackStatusClient
 
 

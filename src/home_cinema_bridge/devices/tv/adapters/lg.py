@@ -6,8 +6,8 @@ from contextlib import asynccontextmanager, suppress
 from bscpylgtv import WebOsClient
 from wakeonlan import send_magic_packet
 
-from lib.devices.tv.base import BaseTvController, TvStatus
-from lib.network.arp import find_mac_by_ip
+from home_cinema_bridge.devices.tv.base import BaseTvController, TvStatus
+from home_cinema_bridge.network.arp import find_mac_by_ip
 
 EMBY_APP_ID = "com.emby.app"
 

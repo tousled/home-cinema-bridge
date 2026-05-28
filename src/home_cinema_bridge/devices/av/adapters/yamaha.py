@@ -2,7 +2,7 @@ import logging
 
 import requests
 
-from lib.devices.av.base import BaseAvReceiver
+from home_cinema_bridge.devices.av.base import BaseAvReceiver
 
 
 class YamahaAvReceiver(BaseAvReceiver):

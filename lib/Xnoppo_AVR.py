@@ -1,7 +1,7 @@
 # FILE FOR DENON
 import logging
 
-from lib.devices.av.factory import create_av_receiver
+from home_cinema_bridge.devices.av.factory import create_av_receiver
 
 
 def get_parametro2(texto,valor_actual):

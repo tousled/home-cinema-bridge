@@ -7,6 +7,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+ENV PYTHONPATH=/app/src
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

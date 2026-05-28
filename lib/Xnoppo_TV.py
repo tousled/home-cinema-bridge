@@ -1,6 +1,6 @@
 import asyncio
 
-from lib.devices.tv.factory import create_tv_controller
+from home_cinema_bridge.devices.tv.factory import create_tv_controller
 
 
 def _run(coroutine):

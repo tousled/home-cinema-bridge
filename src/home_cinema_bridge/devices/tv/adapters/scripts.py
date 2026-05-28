@@ -1,7 +1,7 @@
 import logging
 import subprocess
 
-from lib.devices.tv.base import BaseTvController, TvStatus
+from home_cinema_bridge.devices.tv.base import BaseTvController, TvStatus
 
 
 class ScriptsTvController(BaseTvController):

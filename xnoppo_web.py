@@ -4,6 +4,7 @@ import time
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
+from home_cinema_bridge.devices.tv.factory import get_supported_tv_models
 from lib.Xnoppo import (
     check_socket,
     sendnotifyremote,
@@ -44,8 +45,7 @@ import logging
 import logging.handlers
 import psutil
 import sys
-from lib.devices.av.factory import get_supported_av_models
-from lib.devices.tv.factory import get_supported_tv_models
+from home_cinema_bridge.devices.av.factory import get_supported_av_models
 
 
 WATCHDOG_INTERVAL_SECONDS = 5
