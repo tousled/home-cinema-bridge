@@ -21,15 +21,19 @@ class BaseTvController(ABC):
         pass
 
     @abstractmethod
-    async def refresh_inputs(self) -> TvStatus:
+    async def retrieve_hdmi_inputs(self) -> TvStatus:
         pass
 
     @abstractmethod
-    async def switch_to_player_input(self) -> TvStatus:
+    async def switch_to_hdmi_input(self) -> TvStatus:
         pass
 
     @abstractmethod
     async def return_to_previous_app(self) -> TvStatus:
+        pass
+
+    @abstractmethod
+    async def get_current_app(self) -> str | None:
         pass
 
     async def _execute_tv_operation(

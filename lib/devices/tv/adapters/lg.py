@@ -6,10 +6,8 @@ from contextlib import asynccontextmanager, suppress
 from bscpylgtv import WebOsClient
 from wakeonlan import send_magic_packet
 
-from lib.network.arp import find_mac_by_ip
-
 from lib.devices.tv.base import BaseTvController, TvStatus
-
+from lib.network.arp import find_mac_by_ip
 
 EMBY_APP_ID = "com.emby.app"
 
@@ -48,23 +46,46 @@ class LgTvController(BaseTvController):
             self._test_connection,
         )
 
-    async def refresh_inputs(self) -> TvStatus:
+    async def retrieve_hdmi_inputs(self) -> TvStatus:
         return await self._execute_tv_operation(
             "refreshing LG TV inputs",
             self._refresh_inputs,
         )
 
-    async def switch_to_player_input(self) -> TvStatus:
+    async def switch_to_hdmi_input(self) -> TvStatus:
         return await self._execute_tv_operation(
-            "switching LG TV to player input",
-            self._switch_to_player_input,
+            "switching LG TV to HDMI input",
+            self._switch_to_hdmi_input,
         )
 
+    # TODO This method will be removed as adapters should only know to change the app, not remember which was the latest selected app
     async def return_to_previous_app(self) -> TvStatus:
         return await self._execute_tv_operation(
             "returning LG TV to previous app",
             self._return_to_previous_app,
         )
+
+    async def get_current_app(self) -> str | None:
+        try:
+            return await self._get_current_app()
+
+        except ValueError as exc:
+            logging.error(
+                "TV configuration error while reading LG current app: %s", exc
+            )
+            return None
+
+        except TimeoutError as exc:
+            logging.warning("TV timeout while reading LG current app: %s", exc)
+            return None
+
+        except OSError as exc:
+            logging.warning("TV network error while reading LG current app: %s", exc)
+            return None
+
+        except Exception:
+            logging.exception("Unexpected TV error while reading LG current app")
+            return None
 
     @asynccontextmanager
     async def _connected_client(self, *, wake_if_unreachable: bool = False):
@@ -209,7 +230,7 @@ class LgTvController(BaseTvController):
 
             return TvStatus.OK
 
-    async def _switch_to_player_input(self) -> TvStatus:
+    async def _switch_to_hdmi_input(self) -> TvStatus:
         async with self._connected_client(wake_if_unreachable=True) as client:
             current_app = await client.get_current_app()
 
@@ -230,3 +251,9 @@ class LgTvController(BaseTvController):
 
             await client.launch_app(target_app)
             return TvStatus.OK
+
+    async def _get_current_app(self) -> str | None:
+        async with self._connected_client() as client:
+            current_app = await client.get_current_app()
+            logging.info("Current LG app: %s", current_app)
+            return current_app
