@@ -1114,6 +1114,15 @@ def playto_file(EmbySession, data, scripterx=False):
             log_oppo_qpl_state(EmbySession.config, "after_playnormalfile")
 
             if playback_start_result.is_started:
+                if EmbySession.config["TV"] == True and scripterx:
+                    with startup_timer.measure_step(
+                        "stop_emby_client_before_device_handoff"
+                    ):
+                        response_data5 = EmbySession.playback_stop(params["Session_id"])
+
+                    if EmbySession.config["DebugLevel"] > 0:
+                        print(response_data5)
+
                 if EmbySession.config["TV"] == True:
                     with startup_timer.measure_step("switch_tv_to_oppo_input"):
                         logging.info("Cambiamos HDMI de la TV")
@@ -1124,15 +1133,6 @@ def playto_file(EmbySession, data, scripterx=False):
                             logging.info("Resultado: %s", str(result))
                         except:
                             pass
-
-                if EmbySession.config["TV"] == True and scripterx:
-                    with startup_timer.measure_step(
-                        "stop_emby_client_after_tv_handoff"
-                    ):
-                        response_data5 = EmbySession.playback_stop(params["Session_id"])
-
-                    if EmbySession.config["DebugLevel"] > 0:
-                        print(response_data5)
 
                 if EmbySession.config["AV"] == True:
                     if EmbySession.config["DebugLevel"] > 0:
