@@ -25,7 +25,12 @@ from .devices.oppo.playback_state_waiter import wait_until_oppo_reports_active_p
 from .devices.oppo.playback_status_client import OppoPlaybackStatusClient
 from .oppo_autoscript import unmount_oppo_path
 from .playback.timing import PlaybackStartupTimer
-from .Xnoppo_AVR import av_change_hdmi, av_check_power, av_power_off
+from .Xnoppo_AVR import (
+    av_change_hdmi,
+    av_check_power,
+    av_power_off,
+    av_uses_observed_input_recovery,
+)
 from .Xnoppo_TV import tv_change_hdmi, tv_set_prev
 
 _qpl_last_observed_states = {}
@@ -104,6 +109,49 @@ def log_oppo_qpl_state_sequence(config, label, samples=5, interval=1):
                 print(f"QPL:{label}:sequence | ERROR {type(exc).__name__}: {exc}")
         except Exception:
             pass
+
+
+def wait_for_configured_av_delay_after_tv_handoff(
+    config,
+    tv_handoff_completed_at,
+    uses_observed_input_recovery=False,
+):
+    if tv_handoff_completed_at is None:
+        return
+
+    if uses_observed_input_recovery:
+        logging.info(
+            "Skipping legacy AV HDMI delay because AV input recovery is observed"
+        )
+        return
+
+    try:
+        av_delay = float(config.get("av_delay_hdmi", 0))
+    except (TypeError, ValueError):
+        logging.warning("Invalid av_delay_hdmi value: %s", config.get("av_delay_hdmi"))
+        return
+
+    if av_delay <= 0:
+        return
+
+    elapsed = time.monotonic() - tv_handoff_completed_at
+    remaining = av_delay - elapsed
+
+    if remaining <= 0:
+        logging.info(
+            "AV HDMI delay already satisfied | configured_delay=%.2fs | elapsed_since_tv=%.2fs",
+            av_delay,
+            elapsed,
+        )
+        return
+
+    logging.info(
+        "Waiting before AV HDMI switch | configured_delay=%.2fs | elapsed_since_tv=%.2fs | remaining=%.2fs",
+        av_delay,
+        elapsed,
+        remaining,
+    )
+    time.sleep(remaining)
 
 
 def oppo_control_api_client(config):
@@ -955,6 +1003,7 @@ def playto_file(EmbySession, data, scripterx=False):
     startup_timer = PlaybackStartupTimer()
     EmbySession.playstate = "Loading"
     EmbySession.currentdata = data
+    tv_handoff_completed_at = None
     reset_qpl_observation_state()
     log_oppo_qpl_state(EmbySession.config, "playto_file_start")
     if EmbySession.config["DebugLevel"] > 0:
@@ -1024,6 +1073,27 @@ def playto_file(EmbySession, data, scripterx=False):
                     if EmbySession.config["DebugLevel"] > 0:
                         print(result)
                     logging.info("Resultado: %s", str(result))
+                except:
+                    pass
+
+        if EmbySession.config["TV"] == True and scripterx:
+            with startup_timer.measure_step("stop_emby_client_before_device_handoff"):
+                response_data5 = EmbySession.playback_stop(params["Session_id"])
+
+            if EmbySession.config["DebugLevel"] > 0:
+                print(response_data5)
+
+        if EmbySession.config["TV"] == True:
+            with startup_timer.measure_step("switch_tv_to_oppo_input"):
+                logging.info("Cambiamos HDMI de la TV")
+                try:
+                    result = tv_change_hdmi(EmbySession.config)
+                    if EmbySession.config["DebugLevel"] > 0:
+                        print(result)
+                    logging.info("Resultado: %s", str(result))
+
+                    if result == "OK":
+                        tv_handoff_completed_at = time.monotonic()
                 except:
                     pass
 
@@ -1114,29 +1184,16 @@ def playto_file(EmbySession, data, scripterx=False):
             log_oppo_qpl_state(EmbySession.config, "after_playnormalfile")
 
             if playback_start_result.is_started:
-                if EmbySession.config["TV"] == True and scripterx:
-                    with startup_timer.measure_step(
-                        "stop_emby_client_before_device_handoff"
-                    ):
-                        response_data5 = EmbySession.playback_stop(params["Session_id"])
-
-                    if EmbySession.config["DebugLevel"] > 0:
-                        print(response_data5)
-
-                if EmbySession.config["TV"] == True:
-                    with startup_timer.measure_step("switch_tv_to_oppo_input"):
-                        logging.info("Cambiamos HDMI de la TV")
-                        try:
-                            result = tv_change_hdmi(EmbySession.config)
-                            if EmbySession.config["DebugLevel"] > 0:
-                                print(result)
-                            logging.info("Resultado: %s", str(result))
-                        except:
-                            pass
-
                 if EmbySession.config["AV"] == True:
                     if EmbySession.config["DebugLevel"] > 0:
                         print("AV")
+
+                    with startup_timer.measure_step("wait_before_av_handoff"):
+                        wait_for_configured_av_delay_after_tv_handoff(
+                            EmbySession.config,
+                            tv_handoff_completed_at,
+                            av_uses_observed_input_recovery(EmbySession.config),
+                        )
 
                     with startup_timer.measure_step("switch_av_to_oppo_input"):
                         logging.info("Cambiamos HDMI del AV")

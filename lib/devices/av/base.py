@@ -2,6 +2,8 @@ from abc import ABC, abstractmethod
 
 
 class BaseAvReceiver(ABC):
+    uses_observed_input_recovery = False
+
     def __init__(self, config):
         self.config = config
 
