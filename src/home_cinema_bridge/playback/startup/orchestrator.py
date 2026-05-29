@@ -83,17 +83,6 @@ class PlaybackStartupOrchestrator:
         request: OppoPlaybackStartRequest,
         on_waiting: Callable[[int], None] | None = None,
     ) -> OppoPlaybackStartResult:
-
-        prepare_result = self._oppo_playback.prepare_for_playback_startup()
-
-        if not prepare_result.successful:
-            return OppoPlaybackStartResult(
-                media_mounted=False,
-                playback_command_accepted=False,
-                playback_started_on_device=False,
-                detail=prepare_result.detail,
-            )
-
         return self._oppo_playback.start_playback(
             request,
             on_waiting=on_waiting,

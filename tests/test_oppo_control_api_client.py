@@ -9,7 +9,7 @@ from lib.devices.oppo.control_api_client import (
 
 
 class RecordingOppoControlApiClient(OppoControlApiClient):
-    def _get_text(self, endpoint, query=None, *, timeout=None):
+    def _call_player_endpoint(self, endpoint, query=None, *, timeout=None):
         object.__setattr__(self, "last_endpoint", endpoint)
         object.__setattr__(self, "last_query", query)
         return "OK"

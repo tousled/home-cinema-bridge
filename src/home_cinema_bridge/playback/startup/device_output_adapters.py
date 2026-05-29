@@ -4,10 +4,13 @@ import asyncio
 import logging
 from collections.abc import Callable
 from typing import Any
+from warnings import deprecated
 
-from home_cinema_bridge.devices.oppo.playback_startup import OppoPlaybackStartup
-from home_cinema_bridge.devices.av.factory import create_av_receiver
-from home_cinema_bridge.devices.tv.factory import create_tv_controller
+from home_cinema_bridge.devices.oppo.media_control_playback import (
+    OppoMediaControlPlayback,
+)
+from home_cinema_bridge.devices.av.base import BaseAvReceiver
+from home_cinema_bridge.devices.tv.base import BaseTvController
 from home_cinema_bridge.playback.startup.models import (
     DeviceCommandResult,
     OppoPlaybackPosition,
@@ -20,12 +23,16 @@ from home_cinema_bridge.playback.ports import (
     TelevisionOutputPort,
     OppoPlaybackPort,
 )
-from lib.devices.oppo.control_api_client import OppoControlApiClient
 from lib.devices.oppo.playback_status_client import OppoPlaybackStatusClient
 
 logger = logging.getLogger(__name__)
 
 
+@deprecated(
+    "LegacyTelevisionOutput is a temporary bridge while Xnoppo.py still owns "
+    "startup wiring. Replace it with a direct TV adapter port when the legacy "
+    "entrypoint is removed."
+)
 class LegacyTelevisionOutput(TelevisionOutputPort):
     """
     Bridge from the new playback startup orchestrator to the existing TV factory.
@@ -34,8 +41,8 @@ class LegacyTelevisionOutput(TelevisionOutputPort):
     current TV factory expects it, but the orchestrator itself does not see that dict.
     """
 
-    def __init__(self, config: dict[str, Any]) -> None:
-        self._controller = create_tv_controller(config)
+    def __init__(self, controller: BaseTvController) -> None:
+        self._controller = controller
 
     def get_current_app_id(self) -> str | None:
         try:
@@ -65,6 +72,11 @@ class LegacyTelevisionOutput(TelevisionOutputPort):
             )
 
 
+@deprecated(
+    "LegacyAvReceiverOutput is a temporary bridge while Xnoppo.py still owns "
+    "startup wiring. Replace it with a direct AV receiver adapter port when the "
+    "legacy entrypoint is removed."
+)
 class LegacyAvReceiverOutput(AvReceiverOutputPort):
     """
     Bridge from the new playback startup orchestrator to the existing AV factory.
@@ -73,8 +85,8 @@ class LegacyAvReceiverOutput(AvReceiverOutputPort):
     for power-on and input switching during the startup flow.
     """
 
-    def __init__(self, config: dict[str, Any]) -> None:
-        self._receiver = create_av_receiver(config)
+    def __init__(self, receiver: BaseAvReceiver) -> None:
+        self._receiver = receiver
 
     def power_on(self) -> DeviceCommandResult:
         try:
@@ -112,24 +124,19 @@ class LegacyAvReceiverOutput(AvReceiverOutputPort):
             )
 
 
-class LegacyOppoPlaybackOutput(OppoPlaybackPort):
+@deprecated(
+    "LegacyOppoMediaControlPlaybackOutput adapts legacy config-based startup "
+    "wiring to the clean OPPO MediaControl flow. Remove it when the main "
+    "playback orchestrator owns OPPO adapter construction directly."
+)
+class LegacyOppoMediaControlPlaybackOutput(OppoPlaybackPort):
     """
-    Bridge from the startup orchestrator to the current OPPO playback helpers.
-
-    This adapter is transitional: it hides the current OPPO HTTP/QPL and NAS mount
-    details behind the playback port while the old Xnoppo.py flow is being reduced.
+    Adapter from the startup orchestrator to OPPO MediaControl network playback.
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
         self._config = config
-        self._control_api = OppoControlApiClient.from_config(config)
-        self._playback_startup = OppoPlaybackStartup(
-            config,
-            control_api_client=self._control_api,
-        )
-
-    def prepare_for_playback_startup(self) -> DeviceCommandResult:
-        return self._playback_startup.prepare_for_playback_startup()
+        self._playback = OppoMediaControlPlayback(config)
 
     def start_playback(
         self,
@@ -137,7 +144,7 @@ class LegacyOppoPlaybackOutput(OppoPlaybackPort):
         *,
         on_waiting: Callable[[int], None] | None = None,
     ) -> OppoPlaybackStartResult:
-        return self._playback_startup.start_playback(
+        return self._playback.start_playback(
             request,
             on_waiting=on_waiting,
         )
@@ -167,21 +174,36 @@ class LegacyOppoPlaybackOutput(OppoPlaybackPort):
         raise NotImplementedError
 
     def _playback_status_client(self) -> OppoPlaybackStatusClient:
+        player_host = self._config["Oppo_IP"]
+        player_status_port = int(self._config.get("OPPO_Port", 23))
+
         return OppoPlaybackStatusClient(
-            host=self._config["Oppo_IP"],
-            port=int(self._config.get("OPPO_Port", 23)),
+            host=player_host,
+            port=player_status_port,
             timeout=float(self._config.get("timeout_oppo_conection", 3)),
         )
 
 
+@deprecated(
+    "_run exists only because the current legacy TV adapter exposes async methods "
+    "to synchronous Xnoppo.py startup code."
+)
 def _run(coroutine: Any) -> Any:
     return asyncio.run(coroutine)
 
 
+@deprecated(
+    "_unwrap_value exists only to normalize legacy adapter return shapes during "
+    "the transitional startup wiring."
+)
 def _unwrap_value(result: Any) -> Any:
     return getattr(result, "value", result)
 
 
+@deprecated(
+    "_to_device_command_result exists only to translate legacy adapter return "
+    "values into the new startup result model."
+)
 def _to_device_command_result(
     *,
     operation: str,

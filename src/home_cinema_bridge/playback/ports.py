@@ -30,8 +30,6 @@ class AvReceiverOutputPort(Protocol):
 
 
 class OppoPlaybackPort(Protocol):
-    def prepare_for_playback_startup(self) -> DeviceCommandResult: ...
-
     def start_playback(
         self,
         request: OppoPlaybackStartRequest,

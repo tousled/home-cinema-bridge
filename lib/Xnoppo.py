@@ -10,25 +10,18 @@ import requests
 from home_cinema_bridge.playback.startup import (
     OppoPlaybackStartRequest,
     PlaybackOutputSwitchRequest,
-    PlaybackStartupOrchestrator,
+)
+from home_cinema_bridge.playback.startup.factory import (
+    create_playback_startup_orchestrator as build_playback_startup_orchestrator,
 )
 from home_cinema_bridge.playback.media_location import (
     resolve_player_media_file_location,
-)
-from home_cinema_bridge.playback.startup.device_output_adapters import (
-    LegacyAvReceiverOutput,
-    LegacyOppoPlaybackOutput,
-    LegacyTelevisionOutput,
 )
 from .devices.oppo.control_api_activation import OppoControlApiActivator
 from .devices.oppo.control_api_client import OppoControlApiClient
 from .devices.oppo.mounted_share import (
     OppoMountedShare,
     parse_mounted_share_response,
-)
-from .devices.oppo.network_playback_starter import (
-    OppoNetworkFolder,
-    OppoNetworkPlaybackStarter,
 )
 from .devices.oppo.playback_state_waiter import (
     wait_until_oppo_reports_active_playback,
@@ -928,11 +921,7 @@ def playother(EmbySession, data, scripterx=False):
             print("Fin Replay")
 
 def create_playback_startup_orchestrator(config):
-    return PlaybackStartupOrchestrator(
-        television=LegacyTelevisionOutput(config),
-        av_receiver=LegacyAvReceiverOutput(config),
-        oppo_playback=LegacyOppoPlaybackOutput(config),
-    )
+    return build_playback_startup_orchestrator(config)
 
 
 def switch_playback_output_to_oppo(emby_session, startup_orchestrator, startup_timer):
