@@ -1,5 +1,7 @@
 # FILE FOR DENON
-from lib.devices.av.factory import create_av_receiver
+import logging
+
+from home_cinema_bridge.devices.av.factory import create_av_receiver
 
 
 def get_parametro2(texto,valor_actual):
@@ -95,6 +97,17 @@ def av_test(config):
 
 def av_check_power(config):
     return create_av_receiver(config).power_on()
+
+
+def av_uses_observed_input_recovery(config):
+    try:
+        return create_av_receiver(config).uses_observed_input_recovery
+    except Exception as exc:
+        logging.warning(
+            "Unable to resolve AV input recovery capability | error=%s", exc
+        )
+        return False
+
 
 
 def get_hdmi_list(config):

@@ -1,4 +1,7 @@
 config.json
+config.secrets.json
+.local-config
+compose.local.yaml
 .env
 .venv
 .git

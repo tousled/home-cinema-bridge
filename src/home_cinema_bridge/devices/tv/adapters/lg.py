@@ -6,10 +6,8 @@ from contextlib import asynccontextmanager, suppress
 from bscpylgtv import WebOsClient
 from wakeonlan import send_magic_packet
 
-from lib.network.arp import find_mac_by_ip
-
-from lib.devices.tv.base import BaseTvController, TvStatus
-
+from home_cinema_bridge.devices.tv.base import BaseTvController, TvStatus
+from home_cinema_bridge.network.arp import find_mac_by_ip
 
 EMBY_APP_ID = "com.emby.app"
 
@@ -17,6 +15,8 @@ LG_CONNECT_TIMEOUT_SECONDS = 20.0
 LG_FAST_CONNECT_TIMEOUT_SECONDS = 2.0
 LG_WAKE_TIMEOUT_SECONDS = 20.0
 LG_WAKE_RETRY_INTERVAL_SECONDS = 1.0
+LG_INPUT_CONFIRM_TIMEOUT_SECONDS = 3.0
+LG_INPUT_CONFIRM_INTERVAL_SECONDS = 0.25
 LG_KEY_FILE_PATH = "/config/.aiopylgtv.sqlite"
 
 
@@ -48,23 +48,46 @@ class LgTvController(BaseTvController):
             self._test_connection,
         )
 
-    async def refresh_inputs(self) -> TvStatus:
+    async def retrieve_hdmi_inputs(self) -> TvStatus:
         return await self._execute_tv_operation(
             "refreshing LG TV inputs",
             self._refresh_inputs,
         )
 
-    async def switch_to_player_input(self) -> TvStatus:
+    async def switch_to_hdmi_input(self) -> TvStatus:
         return await self._execute_tv_operation(
-            "switching LG TV to player input",
-            self._switch_to_player_input,
+            "switching LG TV to HDMI input",
+            self._switch_to_hdmi_input,
         )
 
+    # TODO This method will be removed as adapters should only know to change the app, not remember which was the latest selected app
     async def return_to_previous_app(self) -> TvStatus:
         return await self._execute_tv_operation(
             "returning LG TV to previous app",
             self._return_to_previous_app,
         )
+
+    async def get_current_app(self) -> str | None:
+        try:
+            return await self._get_current_app()
+
+        except ValueError as exc:
+            logging.error(
+                "TV configuration error while reading LG current app: %s", exc
+            )
+            return None
+
+        except TimeoutError as exc:
+            logging.warning("TV timeout while reading LG current app: %s", exc)
+            return None
+
+        except OSError as exc:
+            logging.warning("TV network error while reading LG current app: %s", exc)
+            return None
+
+        except Exception:
+            logging.exception("Unexpected TV error while reading LG current app")
+            return None
 
     @asynccontextmanager
     async def _connected_client(self, *, wake_if_unreachable: bool = False):
@@ -180,7 +203,7 @@ class LgTvController(BaseTvController):
 
         return detected_mac
 
-    def _selected_input_id(self) -> str:
+    def _selected_input_target(self) -> tuple[str, str | None]:
         source_index = int(self.config.get("Source", 0))
         sources = self.config.get("TV_SOURCES", [])
 
@@ -193,7 +216,8 @@ class LgTvController(BaseTvController):
         if not input_id:
             raise ValueError("Selected TV input has no WebOS id. Refresh TV inputs first.")
 
-        return input_id
+        expected_reported_input = selected_source.get("appId") or None
+        return input_id, expected_reported_input
 
     async def _test_connection(self) -> TvStatus:
         async with self._connected_client():
@@ -209,7 +233,7 @@ class LgTvController(BaseTvController):
 
             return TvStatus.OK
 
-    async def _switch_to_player_input(self) -> TvStatus:
+    async def _switch_to_hdmi_input(self) -> TvStatus:
         async with self._connected_client(wake_if_unreachable=True) as client:
             current_app = await client.get_current_app()
 
@@ -217,11 +241,90 @@ class LgTvController(BaseTvController):
                 self.config["current_LG"] = current_app
                 logging.info("Current LG app before HDMI switch: %s", current_app)
 
-            target_input = self._selected_input_id()
-            logging.info("Changing LG TV input to %s", target_input)
+            target_input_id, expected_reported_input = self._selected_input_target()
+            logging.info("Changing LG TV input to %s", target_input_id)
 
-            await client.set_input(target_input)
+            await client.set_input(target_input_id)
+            await self._confirm_hdmi_input(
+                client,
+                target_input_id,
+                expected_reported_input,
+            )
             return TvStatus.OK
+
+    async def _confirm_hdmi_input(
+        self,
+        client: WebOsClient,
+        target_input_id: str,
+        expected_reported_input: str | None,
+    ) -> None:
+        if not expected_reported_input:
+            logging.info(
+                "LG HDMI input confirmation unavailable | target_input_id=%s | expected_reported_input is not configured",
+                target_input_id,
+            )
+            return
+
+        start_time = time.monotonic()
+        deadline = start_time + LG_INPUT_CONFIRM_TIMEOUT_SECONDS
+        observed_input = None
+
+        try:
+            while True:
+                remaining_time = deadline - time.monotonic()
+
+                if remaining_time <= 0:
+                    break
+
+                observed_input = await asyncio.wait_for(
+                    client.get_input(),
+                    timeout=remaining_time,
+                )
+                elapsed = time.monotonic() - start_time
+
+                if observed_input == expected_reported_input:
+                    logging.info(
+                        "LG HDMI input confirmed | target_input_id=%s | expected_reported_input=%s | observed_input=%s | elapsed=%.2fs",
+                        target_input_id,
+                        expected_reported_input,
+                        observed_input,
+                        elapsed,
+                    )
+                    return
+
+                sleep_time = min(
+                    LG_INPUT_CONFIRM_INTERVAL_SECONDS,
+                    deadline - time.monotonic(),
+                )
+
+                if sleep_time > 0:
+                    await asyncio.sleep(sleep_time)
+
+        except (TimeoutError, OSError) as exc:
+            logging.warning(
+                "Unable to confirm LG HDMI input after switch | target_input_id=%s | expected_reported_input=%s | error=%s",
+                target_input_id,
+                expected_reported_input,
+                exc,
+            )
+            return
+
+        except Exception:
+            logging.exception(
+                "Unexpected error while confirming LG HDMI input | target_input_id=%s | expected_reported_input=%s",
+                target_input_id,
+                expected_reported_input,
+            )
+            return
+
+        elapsed = time.monotonic() - start_time
+        logging.warning(
+            "LG HDMI input not confirmed | target_input_id=%s | expected_reported_input=%s | observed_input=%s | elapsed=%.2fs",
+            target_input_id,
+            expected_reported_input,
+            observed_input,
+            elapsed,
+        )
 
     async def _return_to_previous_app(self) -> TvStatus:
         async with self._connected_client() as client:
@@ -230,3 +333,9 @@ class LgTvController(BaseTvController):
 
             await client.launch_app(target_app)
             return TvStatus.OK
+
+    async def _get_current_app(self) -> str | None:
+        async with self._connected_client() as client:
+            current_app = await client.get_current_app()
+            logging.info("Current LG app: %s", current_app)
+            return current_app

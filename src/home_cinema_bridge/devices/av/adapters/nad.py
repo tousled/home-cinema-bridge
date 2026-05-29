@@ -1,7 +1,7 @@
 import logging
 
-from lib.devices.av.base import BaseAvReceiver
-from lib.devices.av.tcp import TcpCommandSender
+from home_cinema_bridge.devices.av.base import BaseAvReceiver
+from home_cinema_bridge.devices.av.tcp import TcpCommandSender
 
 
 class NadAvReceiver(BaseAvReceiver, TcpCommandSender):

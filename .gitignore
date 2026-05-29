@@ -16,10 +16,13 @@ xnoppo_web_logging.log*
 !config.example.json
 
 config.json
+config.secrets.json
 *.local.json
 *.secret.json
 .env
 .env.*
+.local-config/
+compose.local.yaml
 
 # IDE / OS
 .idea/

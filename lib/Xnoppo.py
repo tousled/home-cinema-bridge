@@ -7,26 +7,48 @@ import urllib.parse
 
 import requests
 
+from home_cinema_bridge.playback.startup import (
+    OppoPlaybackStartRequest,
+    PlaybackOutputSwitchRequest,
+    PlaybackStartupOrchestrator,
+)
+from home_cinema_bridge.playback.media_location import (
+    resolve_player_media_file_location,
+)
+from home_cinema_bridge.playback.startup.device_output_adapters import (
+    LegacyAvReceiverOutput,
+    LegacyOppoPlaybackOutput,
+    LegacyTelevisionOutput,
+)
 from .devices.oppo.control_api_activation import OppoControlApiActivator
 from .devices.oppo.control_api_client import OppoControlApiClient
-from .devices.oppo.legacy_network_compat import (
-    LoginNFS,
-    LoginSambaWithOutID,
-    checkfolderhasbdmv,
-    playnormalfile,
-    smbtrick,
+from .devices.oppo.mounted_share import (
+    OppoMountedShare,
+    parse_mounted_share_response,
 )
-from .devices.oppo.mounted_share import OppoMountedShare, parse_mounted_share_response
 from .devices.oppo.network_playback_starter import (
     OppoNetworkFolder,
     OppoNetworkPlaybackStarter,
 )
-from .devices.oppo.playback_state_waiter import wait_until_oppo_reports_active_playback
+from .devices.oppo.playback_state_waiter import (
+    wait_until_oppo_reports_active_playback,
+)
 from .devices.oppo.playback_status_client import OppoPlaybackStatusClient
+from .devices.oppo.legacy_network_compat import (
+    checkfolderhasbdmv,
+    playnormalfile,
+    LoginNFS,
+    LoginSambaWithOutID,
+    smbtrick,
+)
+
+from home_cinema_bridge.playback.timing import PlaybackStartupTimer
+
 from .oppo_autoscript import unmount_oppo_path
-from .playback.timing import PlaybackStartupTimer
-from .Xnoppo_AVR import av_change_hdmi, av_check_power, av_power_off
-from .Xnoppo_TV import tv_change_hdmi, tv_set_prev
+from .Xnoppo_AVR import (
+    av_power_off,
+)
+from .Xnoppo_TV import tv_set_prev
 
 _qpl_last_observed_states = {}
 
@@ -81,29 +103,6 @@ def log_oppo_qpl_state(config, label, changes_only=False):
             pass
 
         return None
-
-
-def log_oppo_qpl_state_sequence(config, label, samples=5, interval=1):
-    try:
-        if config.get("DebugLevel", 0) <= 0:
-            return
-
-        print(f"QPL:{label}:sequence_start | samples={samples} | interval={interval}s")
-
-        for index in range(samples):
-            log_oppo_qpl_state(config, f"{label}[{index + 1}/{samples}]")
-
-            if index < samples - 1:
-                time.sleep(interval)
-
-        print(f"QPL:{label}:sequence_end")
-
-    except Exception as exc:
-        try:
-            if config.get("DebugLevel", 0) > 0:
-                print(f"QPL:{label}:sequence | ERROR {type(exc).__name__}: {exc}")
-        except Exception:
-            pass
 
 
 def oppo_control_api_client(config):
@@ -173,27 +172,6 @@ def getplayingtime(config):
     return oppo_control_api_client(config).get_playing_time()
 
 
-def mountSharedFolderID(server, folder, Username, Password, config):
-    if config["DebugLevel"] == 2:
-        print("*** mountSharedFolderID ***")
-
-    logging.debug("*** mountSharedFolderID ***")
-
-    response_text = oppo_control_api_client(config).mount_samba_folder_with_id(
-        server=server,
-        folder=folder,
-        username=Username,
-        password=Password,
-        timeout=config["timeout_oppo_mount"],
-    )
-
-    if config["DebugLevel"] == 2:
-        print("*** Fin mountSharedFolderID ***")
-
-    logging.debug("*** Mount Response: %s", response_text)
-    return response_text
-
-
 def mountSharedFolder(server, folder, Username, Password, config, checksmb=True):
     if config["DebugLevel"] == 2:
         print("*** mountSharedFolder ***")
@@ -235,13 +213,6 @@ def mountSharedNFSFolder(server, folder, Username, Password, config):
 
     logging.debug("*** Mount Response: %s", response_text)
     return response_text
-
-
-def convert(s):
-    try:
-        return s.group(0).encode("ISO-8859-1").decode("utf8")
-    except:
-        return s.group(0)
 
 
 def build_oppo_mounted_folder_path(mounted_share: OppoMountedShare, folder: str) -> str:
@@ -538,19 +509,6 @@ def setaudiotrack(config, audio_index):
     return response.text
 
 
-def getmaxaudiotrack(config):
-    logging.debug("getaudiotrack")
-    url = "http://" + config["Oppo_IP"] + ":436/getaudiomenulist?"
-    headers = {}
-    logging.debug(url)
-    response = requests.get(url, headers=headers)
-    logging.debug("*** getaudiotrack Response: %s", response.text)
-    if config["DebugLevel"] == 2:
-        print(response.text)
-    audio_list = json.loads(response.text)
-    return len(audio_list["audio_list"])
-
-
 def apply_selected_subtitle_track(emby_session, params, startup_timer=None):
     logging.debug("apply_selected_subtitle_track")
     try:
@@ -788,16 +746,19 @@ def playother(EmbySession, data, scripterx=False):
 
     movie = ItemInfo["Path"]
     Container = ItemInfo["Container"]
-    movie = resolve_oppo_movie_path(movie, EmbySession.config)
+    media_location = resolve_player_media_file_location(
+        emby_media_path=movie,
+        playback_file_format=Container,
+        path_mappings=EmbySession.config["servers"],
+    )
     logging.info("-----------------------------------------------------------")
-    servidor, carpeta, fichero = parse_oppo_path(movie)
-    logging.info("Servidor               : %s", servidor)
-    logging.info("Fichero                : %s", fichero)
-    logging.info("Carpeta                : %s", carpeta)
+    logging.info("Servidor               : %s", media_location.content_server)
+    logging.info("Fichero                : %s", media_location.playback_file_name)
+    logging.info("Carpeta                : %s", media_location.content_directory)
     logging.info("-----------------------------------------------------------")
-    EmbySession.server = servidor
-    EmbySession.folder = carpeta
-    EmbySession.filename = fichero
+    EmbySession.server = media_location.content_server
+    EmbySession.folder = media_location.content_directory
+    EmbySession.filename = media_location.playback_file_name
     EmbySession.playedtitle = ItemInfo["Name"]
     response_data6f = getdevicelist(EmbySession.config)
     device_list = json.loads(response_data6f)
@@ -805,23 +766,35 @@ def playother(EmbySession, data, scripterx=False):
     if EmbySession.config["DebugLevel"] > 0:
         print(device_list)
 
-    nfs = resolve_server_is_nfs(EmbySession.config, device_list, servidor)
+    nfs = resolve_server_is_nfs(
+        EmbySession.config,
+        device_list,
+        media_location.content_server,
+    )
 
     if nfs:
-        LoginNFS(EmbySession.config, servidor)
+        LoginNFS(EmbySession.config, media_location.content_server)
         response_data7 = mountSharedNFSFolder(
-            servidor, carpeta, "", "", EmbySession.config
+            media_location.content_server,
+            media_location.content_directory,
+            "",
+            "",
+            EmbySession.config,
         )
     else:
-        LoginSambaWithOutID(EmbySession.config, servidor)
+        LoginSambaWithOutID(EmbySession.config, media_location.content_server)
         response_data7 = mountSharedFolder(
-            servidor, carpeta, "", "", EmbySession.config
+            media_location.content_server,
+            media_location.content_directory,
+            "",
+            "",
+            EmbySession.config,
         )
 
     response_mount, mounted_share = parse_mounted_share_response(
         response_data7,
-        server=servidor,
-        folder=carpeta,
+        server=media_location.content_server,
+        folder=media_location.content_directory,
         is_nfs=nfs,
     )
 
@@ -829,8 +802,8 @@ def playother(EmbySession, data, scripterx=False):
         error = response_mount.get("retInfo", "No hay mas info")
         logging.warning(
             "Replay mount failed | server=%s | folder=%s | error=%s",
-            servidor,
-            carpeta,
+            media_location.content_server,
+            media_location.content_directory,
             error,
         )
 
@@ -838,9 +811,9 @@ def playother(EmbySession, data, scripterx=False):
             EmbySession.send_message2(
                 params["Session_id"],
                 EmbySession.lang["x_msg_error_mount"]
-                + servidor
+                + media_location.content_server
                 + "/"
-                + carpeta
+                + media_location.content_directory
                 + " - info:"
                 + error,
                 5000,
@@ -849,9 +822,9 @@ def playother(EmbySession, data, scripterx=False):
             EmbySession.send_user_message(
                 params["ControllingUserId"],
                 EmbySession.lang["x_msg_error_mount"]
-                + servidor
+                + media_location.content_server
                 + "/"
-                + carpeta
+                + media_location.content_directory
                 + " - info:"
                 + error,
                 5000,
@@ -861,11 +834,15 @@ def playother(EmbySession, data, scripterx=False):
         return
 
     if Container == "bluray":
-        response_data8 = checkfolderhasbdmv(EmbySession.config, mounted_share, fichero)
+        response_data8 = checkfolderhasbdmv(
+            EmbySession.config,
+            mounted_share,
+            media_location.playback_file_name,
+        )
     else:
         response_data8 = playnormalfile(
             mounted_share,
-            fichero,
+            media_location.playback_file_name,
             "0",
             EmbySession.config,
         )
@@ -950,11 +927,42 @@ def playother(EmbySession, data, scripterx=False):
         if EmbySession.config["DebugLevel"] > 0:
             print("Fin Replay")
 
+def create_playback_startup_orchestrator(config):
+    return PlaybackStartupOrchestrator(
+        television=LegacyTelevisionOutput(config),
+        av_receiver=LegacyAvReceiverOutput(config),
+        oppo_playback=LegacyOppoPlaybackOutput(config),
+    )
+
+
+def switch_playback_output_to_oppo(emby_session, startup_orchestrator, startup_timer):
+
+    request = PlaybackOutputSwitchRequest(
+        tv_input_id=str(emby_session.config.get("Source", "configured_tv_input")),
+        av_input_id=emby_session.config.get("AV_Input"),
+        tv_enabled=emby_session.config.get("TV") is True,
+        av_enabled=emby_session.config.get("AV") is True,
+    )
+
+    with startup_timer.measure_step("switch_playback_output_to_oppo"):
+        result = startup_orchestrator.switch_playback_output_to_oppo(request)
+
+    logging.info(
+        "Playback output switch result | successful=%s | tv=%s | av_power=%s | av_input=%s",
+        result.successful,
+        result.tv_input_result.status.value,
+        result.av_power_result.status.value,
+        result.av_input_result.status.value,
+    )
+
+    return result
+
 
 def playto_file(EmbySession, data, scripterx=False):
     startup_timer = PlaybackStartupTimer()
     EmbySession.playstate = "Loading"
     EmbySession.currentdata = data
+    tv_handoff_completed_at = None
     reset_qpl_observation_state()
     log_oppo_qpl_state(EmbySession.config, "playto_file_start")
     if EmbySession.config["DebugLevel"] > 0:
@@ -999,94 +1007,37 @@ def playto_file(EmbySession, data, scripterx=False):
                 params["ControllingUserId"], EmbySession.lang["x_msg_init_oppo"]
             )
 
-        with startup_timer.measure_step("oppo_initial_control_queries"):
-            getmainfirmwareversion(EmbySession.config)
-            getdevicelist(EmbySession.config)
-            getsetupmenu(EmbySession.config)
-            OppoSignin(EmbySession.config)
-            getdevicelist(EmbySession.config)
-            getglobalinfo(EmbySession.config)
-            response_data6f = getdevicelist(EmbySession.config)
+        if EmbySession.config["TV"] is True and scripterx:
+            with startup_timer.measure_step("stop_emby_client_before_device_handoff"):
+                response_data5 = EmbySession.playback_stop(params["Session_id"])
 
-        with startup_timer.measure_step("eject_oppo_disc_or_media"):
-            sendremotekey("EJT", EmbySession.config)
-            if EmbySession.config["BRDisc"] == True:
-                time.sleep(1)
-                sendremotekey("EJT", EmbySession.config)
+            if EmbySession.config["DebugLevel"] > 0:
+                print(response_data5)
 
-        with startup_timer.measure_step("ensure_av_power_on"):
-            if EmbySession.config["AV"] == True:
-                if EmbySession.config["DebugLevel"] > 0:
-                    print("AV POWER")
-                logging.info("Comprobamos que esta encendido el AV")
-                try:
-                    result = av_check_power(EmbySession.config)
-                    if EmbySession.config["DebugLevel"] > 0:
-                        print(result)
-                    logging.info("Resultado: %s", str(result))
-                except:
-                    pass
-
-        with startup_timer.measure_step("refresh_setup_menu_before_mount"):
-            time.sleep(1)
-            getsetupmenu(EmbySession.config)
+        startup_orchestrator = create_playback_startup_orchestrator(EmbySession.config)
+        switch_playback_output_to_oppo(EmbySession, startup_orchestrator, startup_timer)
 
         with startup_timer.measure_step("resolve_media_path"):
             item_info, _ = resolve_mocked_item_info(EmbySession, params, item_info)
             movie = item_info["Path"]
             container = item_info["Container"]
             logging.info("-----------------------------------------------------------")
-            movie = resolve_oppo_movie_path(movie, EmbySession.config)
+            media_location = resolve_player_media_file_location(
+                emby_media_path=movie,
+                playback_file_format=container,
+                path_mappings=EmbySession.config["servers"],
+            )
             logging.info("-----------------------------------------------------------")
-            servidor, carpeta, fichero = parse_oppo_path(movie)
 
-        logging.info("Servidor               : %s", servidor)
-        logging.info("Fichero                : %s", fichero)
-        logging.info("Carpeta                : %s", carpeta)
+        logging.info("Servidor               : %s", media_location.content_server)
+        logging.info("Fichero                : %s", media_location.playback_file_name)
+        logging.info("Carpeta                : %s", media_location.content_directory)
         logging.info("-----------------------------------------------------------")
-        EmbySession.server = servidor
-        EmbySession.folder = carpeta
-        EmbySession.filename = fichero
+        EmbySession.server = media_location.content_server
+        EmbySession.folder = media_location.content_directory
+        EmbySession.filename = media_location.playback_file_name
         EmbySession.playedtitle = item_info["Name"]
 
-        if EmbySession.config["wait_nfs"] == True:
-            text = 'sub_type":"nfs'
-        else:
-            text = "sub_type"
-
-        with startup_timer.measure_step("wait_for_oppo_device_list"):
-            while response_data6f.find(text) == 0:
-                time.sleep(1)
-                response_data6f = getdevicelist(EmbySession.config)
-                response_data_on = sendremotekey("QPW", EmbySession.config)
-                logging.debug("Query POWER ON: %s", response_data_on)
-
-        with startup_timer.measure_step("resolve_share_protocol"):
-            device_list = json.loads(response_data6f)
-            if EmbySession.config["DebugLevel"] > 0:
-                print(device_list)
-
-            network_playback_starter = OppoNetworkPlaybackStarter(EmbySession.config)
-            network_folder_protocol = (
-                network_playback_starter.resolve_network_folder_protocol(
-                    device_list=device_list,
-                    server_name=servidor,
-                )
-            )
-            network_folder = OppoNetworkFolder(
-                server_name=servidor,
-                folder_path=carpeta,
-                protocol=network_folder_protocol,
-            )
-
-        with startup_timer.measure_step("login_share_protocol"):
-            network_playback_starter.prepare_network_folder_access(network_folder)
-        with startup_timer.measure_step("legacy_wait_when_oppo_not_always_on"):
-            if EmbySession.config["Always_ON"] == False:
-                time.sleep(5)
-
-        with startup_timer.measure_step("refresh_setup_menu_after_share_login"):
-            getsetupmenu(EmbySession.config)
 
         if scripterx:
             EmbySession.send_message2(
@@ -1099,86 +1050,90 @@ def playto_file(EmbySession, data, scripterx=False):
                 1999,
             )
 
-        with startup_timer.measure_step("mount_shared_folder"):
-            mount_result = network_playback_starter.mount_network_folder(network_folder)
-            mounted_share = mount_result.mounted_share
+        playback_start_poll_interval = 0.5
+        last_notified_second = -1
 
-        if mount_result.is_mounted:
-            with startup_timer.measure_step("start_oppo_playback"):
-                playback_start_result = network_playback_starter.start_playback(
-                    mounted_share=mounted_share,
-                    filename=fichero,
-                    container=container,
+        def notify_playback_waiting(attempt: int):
+            nonlocal last_notified_second
+
+            elapsed_seconds = int(attempt * playback_start_poll_interval)
+            notification_interval_seconds = 1
+
+            if elapsed_seconds <= 0:
+                return
+
+            if elapsed_seconds % notification_interval_seconds != 0:
+                return
+
+            if elapsed_seconds == last_notified_second:
+                return
+
+            last_notified_second = elapsed_seconds
+            message = (
+                EmbySession.lang["x_msg_wait_for_play"] + str(elapsed_seconds) + "s"
+            )
+
+            if scripterx:
+                EmbySession.send_message2(params["Session_id"], message, 999)
+            else:
+                EmbySession.send_user_message(params["ControllingUserId"], message, 999)
+
+        oppo_playback_start_request = OppoPlaybackStartRequest(
+            media_location=media_location,
+            wait_for_nfs_share=EmbySession.config["wait_nfs"] is True,
+            assume_player_already_on=EmbySession.config["Always_ON"] is True,
+            startup_timeout_seconds=EmbySession.config["timeout_oppo_playitem"],
+            poll_interval_seconds=playback_start_poll_interval,
+        )
+
+        with startup_timer.measure_step("start_oppo_playback"):
+            oppo_playback_start_result = startup_orchestrator.start_oppo_playback(
+                request=oppo_playback_start_request,
+                on_waiting=notify_playback_waiting,
+            )
+
+        log_oppo_qpl_state(EmbySession.config, "after_playnormalfile")
+
+        playback_state = oppo_playback_start_result.playback_state
+        logging.info(
+            "OPPO playback startup result | successful=%s | media_mounted=%s | playback_command_accepted=%s | playback_started_on_device=%s | status=%s | category=%s | detail=%s",
+            oppo_playback_start_result.successful,
+            oppo_playback_start_result.media_mounted,
+            oppo_playback_start_result.playback_command_accepted,
+            oppo_playback_start_result.playback_started_on_device,
+            playback_state.status.value if playback_state is not None else None,
+            playback_state.category.value if playback_state is not None else None,
+            oppo_playback_start_result.detail,
+        )
+
+        if not oppo_playback_start_result.successful:
+            if not oppo_playback_start_result.media_mounted:
+                error_message = (
+                    EmbySession.lang["x_msg_error_mount"]
+                    + media_location.content_server
+                    + "/"
+                    + media_location.content_directory
+                    + " - info:"
+                    + str(oppo_playback_start_result.detail)
                 )
-
-            log_oppo_qpl_state(EmbySession.config, "after_playnormalfile")
-
-            if playback_start_result.is_started:
-                timeout = EmbySession.config["timeout_oppo_playitem"]
-                playback_start_poll_interval = 0.5
-                last_notified_second = -1
-
-                def notify_playback_waiting(attempt: int):
-                    nonlocal last_notified_second
-
-                    elapsed_seconds = int(attempt * playback_start_poll_interval)
-
-                    notification_interval_seconds = 1
-
-                    if elapsed_seconds <= 0:
-                        return
-
-                    if elapsed_seconds % notification_interval_seconds != 0:
-                        return
-
-                    if elapsed_seconds == last_notified_second:
-                        return
-
-                    last_notified_second = elapsed_seconds
-                    message = (
-                        EmbySession.lang["x_msg_wait_for_play"]
-                        + str(elapsed_seconds)
-                        + "s"
-                    )
-
-                    if scripterx:
-                        EmbySession.send_message2(params["Session_id"], message, 999)
-                    else:
-                        EmbySession.send_user_message(
-                            params["ControllingUserId"], message, 999
-                        )
-
-                with startup_timer.measure_step(
-                    "wait_until_oppo_reports_active_playback"
-                ):
-                    startup_result = wait_until_oppo_reports_active_playback(
-                        config=EmbySession.config,
-                        timeout=timeout,
-                        interval=playback_start_poll_interval,
-                        on_playback_waiting=notify_playback_waiting,
-                    )
-
-                logging.info(
-                    "QPL playback startup result | started=%s | status=%s | category=%s | attempts=%s | elapsed=%.2fs",
-                    startup_result.started,
-                    startup_result.status,
-                    startup_result.category.value,
-                    startup_result.attempts,
-                    startup_result.elapsed_seconds,
+            elif not oppo_playback_start_result.playback_command_accepted:
+                error_message = (
+                    EmbySession.lang["x_msg_error_play"]
+                    + media_location.playback_file_name
+                    + " - info:"
+                    + str(oppo_playback_start_result.detail)
                 )
+            else:
+                error_message = EmbySession.lang["x_msg_timeout_play"]
+                logging.info("Timeout Reproduciendo %s", movie)
 
-                if not startup_result.started:
-                    if scripterx:
-                        EmbySession.send_message2(
-                            params["Session_id"], EmbySession.lang["x_msg_timeout_play"]
-                        )
-                    else:
-                        EmbySession.send_user_message(
-                            params["ControllingUserId"],
-                            EmbySession.lang["x_msg_timeout_play"],
-                        )
-                    logging.info("Timeout Reproduciendo %s", movie)
-                else:
+            if scripterx:
+                EmbySession.send_message2(params["Session_id"], error_message, 5000)
+            else:
+                EmbySession.send_user_message(
+                    params["ControllingUserId"], error_message, 5000
+                )
+        else:
                     with startup_timer.measure_step("notify_emby_playback_started"):
                         EmbySession.playstate = "Playing"
                         EmbySession.playnow(data)
@@ -1209,48 +1164,13 @@ def playto_file(EmbySession, data, scripterx=False):
                         except:
                             pass
 
-                    if EmbySession.config["TV"] == True:
-                        with startup_timer.measure_step("switch_tv_to_oppo_input"):
-                            logging.info("Cambiamos HDMI de la TV")
-                            try:
-                                result = tv_change_hdmi(EmbySession.config)
-                                if EmbySession.config["DebugLevel"] > 0:
-                                    print(result)
-                                logging.info("Resultado: %s", str(result))
-                            except:
-                                pass
-
-                        if scripterx:
-                            with startup_timer.measure_step(
-                                "stop_emby_client_after_tv_handoff"
-                            ):
-                                response_data5 = EmbySession.playback_stop(
-                                    params["Session_id"]
-                                )
-
-                            if EmbySession.config["DebugLevel"] > 0:
-                                print(response_data5)
-                    else:
+                    if EmbySession.config["TV"] != True:
                         if scripterx == True:
                             EmbySession.send_message2(
                                 params["Session_id"],
                                 EmbySession.lang["x_msg_init_play"] + movie,
                             )
                         logging.info("Reprodución iniciada: %s", movie)
-                    if EmbySession.config["AV"] == True:
-                        if EmbySession.config["DebugLevel"] > 0:
-                            print("AV")
-
-                        with startup_timer.measure_step("switch_av_to_oppo_input"):
-                            logging.info("Cambiamos HDMI del AV")
-                            try:
-                                time.sleep(EmbySession.config["av_delay_hdmi"])
-                                result = av_change_hdmi(EmbySession.config)
-                                if EmbySession.config["DebugLevel"] > 0:
-                                    print(result)
-                                logging.info("Resultado: %s", str(result))
-                            except:
-                                pass
 
                     with startup_timer.measure_step(
                         "initial_global_info_before_progress_loop"
@@ -1398,51 +1318,12 @@ def playto_file(EmbySession, data, scripterx=False):
                             logging.info("Resultado: %s", str(result))
                         except:
                             pass
-            else:
-                error = playback_start_result.error_message
-                if scripterx:
-                    EmbySession.send_message2(
-                        params["Session_id"],
-                        EmbySession.lang["x_msg_error_play"]
-                        + fichero
-                        + "- info:"
-                        + error,
-                        5000,
-                    )
-                else:
-                    EmbySession.send_user_message(
-                        params["ControllingUserId"],
-                        EmbySession.lang["x_msg_error_play"]
-                        + fichero
-                        + " - info:"
-                        + error,
-                        5000,
-                    )
-        else:
-            error = mount_result.error_message
-
-            mount_path = servidor + "/" + carpeta
-            mount_path_len = len(mount_path)
-            error_message = (
-                EmbySession.lang["x_msg_error_mount"]
-                + mount_path
-                + " - info:"
-                + error
-                + " long:"
-                + str(mount_path_len)
-            )
-
-            if scripterx:
-                EmbySession.send_message2(params["Session_id"], error_message, 5000)
-            else:
-                EmbySession.send_user_message(
-                    params["ControllingUserId"], error_message, 5000
-                )
-        if EmbySession.config["Autoscript"] and mounted_share is not None:
+        mounted_path = oppo_playback_start_result.mounted_path
+        if EmbySession.config["Autoscript"] and mounted_path is not None:
             result = unmount_oppo_path(
                 host=EmbySession.config["Oppo_IP"],
                 port=EmbySession.config.get("OPPO_Port", 23),
-                mount_path=mounted_share.mount_path,
+                mount_path=mounted_path,
                 debug=EmbySession.config["DebugLevel"] > 0,
                 timeout=EmbySession.config["timeout_oppo_mount"],
             )

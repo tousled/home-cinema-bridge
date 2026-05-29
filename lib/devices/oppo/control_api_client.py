@@ -12,14 +12,16 @@ OPPO_HTTP_PORT = 436
 
 @dataclass(frozen=True)
 class OppoControlApiClient:
-    host: str
-    port: int = OPPO_HTTP_PORT
+    player_host: str
+    player_port: int = OPPO_HTTP_PORT
+    media_server_host: str | None = None
 
     @classmethod
     def from_config(cls, config: dict) -> "OppoControlApiClient":
         return cls(
-            host=str(config["Oppo_IP"]),
-            port=int(config.get("OPPO_HTTP_Port", OPPO_HTTP_PORT)),
+            player_host=str(config["Oppo_IP"]),
+            player_port=int(config.get("OPPO_HTTP_Port", OPPO_HTTP_PORT)),
+            media_server_host=extract_host_from_url(str(config.get("emby_server", ""))),
         )
 
     def get_main_firmware_version(self) -> str:
@@ -28,10 +30,16 @@ class OppoControlApiClient:
     def get_setup_menu(self) -> str:
         return self._get_text("getsetupmenu")
 
-    def sign_in(self, app_ip_address: str = "192.168.1.135") -> str:
-        # Keep the legacy payload shape for now. The hardcoded IP already existed in Xnoppo.py.
+    def sign_in(self, app_ip_address: str | None = None) -> str:
+        effective_app_ip_address = app_ip_address or self.media_server_host or ""
         payload = urllib.parse.quote(
-            f'{{"appIconType":1,"appIpAddress":"{app_ip_address}"}}'
+            json.dumps(
+                {
+                    "appIconType": 1,
+                    "appIpAddress": effective_app_ip_address,
+                },
+                separators=(",", ":"),
+            )
         )
         return self._get_text("signin", payload)
 
@@ -43,6 +51,10 @@ class OppoControlApiClient:
 
     def get_playing_time(self) -> str:
         return self._get_text("getplayingtime")
+
+    def send_remote_key(self, key: str) -> str:
+        payload = urllib.parse.quote(json.dumps({"key": key}))
+        return self._get_text("sendremotekey", payload)
 
     def login_nfs_server(self, server: str) -> str:
         payload = f'{{"serverName":"{server}"}}'
@@ -208,9 +220,22 @@ class OppoControlApiClient:
             return error
 
     def _build_url(self, endpoint: str, query: str | None = None) -> str:
-        url = f"http://{self.host}:{self.port}/{endpoint}"
+        url = f"http://{self.player_host}:{self.player_port}/{endpoint}"
 
         if query is not None:
             url = f"{url}?{query}"
 
         return url
+
+
+def extract_host_from_url(url: str) -> str:
+    normalized_url = url.strip()
+
+    if not normalized_url:
+        return ""
+
+    if "://" not in normalized_url:
+        normalized_url = f"//{normalized_url}"
+
+    parsed_url = urllib.parse.urlparse(normalized_url)
+    return parsed_url.hostname or ""

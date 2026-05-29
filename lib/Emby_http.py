@@ -89,6 +89,7 @@ class EmbyHttp(threading.Thread):
         params["audio_stream_index"] = audio_stream_index
         params["ControllingUserId"] = data.get("ControllingUserId", "")
         params["Session_id"] = data.get("SessionID", None)
+        params["play_session_id"] = data.get("PlaySessionId", "")
         params["DeviceName"] = data.get("DeviceName", "")
         params["Device_Id"] = data.get("Device_Id", "")
 
@@ -121,11 +122,17 @@ class EmbyHttp(threading.Thread):
                       "IsMuted": False,
                       "PositionTicks": 0,
                       "PlayMethod": "DirectPlay",
+                      "PlaySessionId": params["play_session_id"],
                       "RepeatMode": "RepeatNone"
                         }
         headers = self.get_headers(self.user_info)
     
-        response = requests.post(url, data=message_data, headers=headers)
+        response = requests.post(url, json=message_data, headers=headers)
+        logging.debug(
+            "Emby playback started response | status=%s | body=%s",
+            response.status_code,
+            response.text,
+        )
         if self.config["DebugLevel"]>0: print (response.text)
 
         return response

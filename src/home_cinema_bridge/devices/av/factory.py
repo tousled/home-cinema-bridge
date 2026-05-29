@@ -1,9 +1,9 @@
-from lib.devices.av.adapters.denon import DenonAvReceiver
-from lib.devices.av.adapters.marantz import MarantzAvReceiver
-from lib.devices.av.adapters.nad import NadAvReceiver
-from lib.devices.av.adapters.onkyo import OnkyoAvReceiver
-from lib.devices.av.adapters.scripts import ScriptsAvReceiver
-from lib.devices.av.adapters.yamaha import YamahaAvReceiver
+from home_cinema_bridge.devices.av.adapters.denon import DenonAvReceiver
+from home_cinema_bridge.devices.av.adapters.marantz import MarantzAvReceiver
+from home_cinema_bridge.devices.av.adapters.nad import NadAvReceiver
+from home_cinema_bridge.devices.av.adapters.onkyo import OnkyoAvReceiver
+from home_cinema_bridge.devices.av.adapters.scripts import ScriptsAvReceiver
+from home_cinema_bridge.devices.av.adapters.yamaha import YamahaAvReceiver
 
 
 AV_RECEIVERS = {

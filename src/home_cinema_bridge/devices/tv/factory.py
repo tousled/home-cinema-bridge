@@ -1,6 +1,5 @@
-from lib.devices.tv.adapters.lg import LgTvController
-from lib.devices.tv.adapters.scripts import ScriptsTvController
-
+from home_cinema_bridge.devices.tv.adapters.lg import LgTvController
+from home_cinema_bridge.devices.tv.adapters.scripts import ScriptsTvController
 
 TV_CONTROLLERS = {
     "LG": LgTvController,

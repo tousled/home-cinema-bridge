@@ -4,6 +4,7 @@ import time
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
+from home_cinema_bridge.devices.tv.factory import get_supported_tv_models
 from lib.Xnoppo import (
     check_socket,
     sendnotifyremote,
@@ -44,8 +45,7 @@ import logging
 import logging.handlers
 import psutil
 import sys
-from lib.devices.av.factory import get_supported_av_models
-from lib.devices.tv.factory import get_supported_tv_models
+from home_cinema_bridge.devices.av.factory import get_supported_av_models
 
 
 WATCHDOG_INTERVAL_SECONDS = 5
@@ -351,36 +351,63 @@ def leer_img(web_file):
 
 
 def test_path(config, server):
+    try:
+        test_media_path = _build_test_media_path(server)
+        rutas = get_mount_path(test_media_path, server)
+    except ValueError as exc:
+        logging.warning("Invalid path test configuration: %s", exc)
+        return str(exc)
 
-    rutas = get_mount_path(server["Emby_Path"] + "/test.mkv", server)
     result2 = test_mount_path(config, rutas["Servidor"], rutas["Carpeta"])
     return result2
 
 
-def get_mount_path(movie, server_data):
+def _build_test_media_path(server_data):
+    emby_path = _normalize_config_path(server_data.get("Emby_Path", ""))
 
-    movie = movie.replace(server_data["Emby_Path"], server_data["Oppo_Path"])
-    movie = movie.replace("\\\\", "\\")
-    movie = movie.replace("\\", "/")
-    word = "/"
-    inicio = movie.find(word)
-    inicio = inicio + 1
-    final = movie.find(word, inicio, len(movie))
-    servidor = movie[inicio:final]
-    ultimo = final + 1
-    result = final + 1
-    while result > 0:
-        ultimo = result + 1
-        result = movie.find(word, ultimo, len(movie))
-    fichero = movie[ultimo : len(movie)]
-    final = final + 1
-    ultimo = ultimo - 1
-    carpeta = movie[final:ultimo]
+    if not emby_path:
+        raise ValueError("INVALID PATH CONFIG: Emby_Path is required.")
+
+    return emby_path.rstrip("/") + "/test.mkv"
+
+
+def get_mount_path(movie, server_data):
+    emby_path = _normalize_config_path(server_data.get("Emby_Path", ""))
+    oppo_path = _normalize_config_path(server_data.get("Oppo_Path", ""))
+
+    if not emby_path:
+        raise ValueError("INVALID PATH CONFIG: Emby_Path is required.")
+
+    if not oppo_path or oppo_path == "/":
+        raise ValueError("INVALID PATH CONFIG: Oppo_Path is required.")
+
+    movie = _normalize_config_path(movie)
+    emby_prefix = emby_path.rstrip("/")
+    oppo_prefix = oppo_path.rstrip("/")
+
+    if movie != emby_prefix and not movie.startswith(emby_prefix + "/"):
+        raise ValueError("INVALID PATH CONFIG: Emby_Path does not match the test path.")
+
+    movie = oppo_prefix + movie[len(emby_prefix) :]
+    path_parts = movie.strip("/").split("/")
+
+    if len(path_parts) < 3:
+        raise ValueError(
+            "INVALID PATH CONFIG: Oppo_Path must include server and folder."
+        )
+
+    servidor = path_parts[0]
+    carpeta = "/".join(path_parts[1:-1])
+    fichero = path_parts[-1]
     resultado = {}
     resultado["Servidor"] = servidor
     resultado["Carpeta"] = carpeta
     resultado["Fichero"] = fichero
     return resultado
+
+
+def _normalize_config_path(path):
+    return str(path or "").strip().replace("\\\\", "\\").replace("\\", "/")
 
 
 def test_mount_path(config, servidor, carpeta):
@@ -909,7 +936,7 @@ class MyServer(BaseHTTPRequestHandler):
             a = navigate_folder(path, config)
             a_json = json.dumps(a)
             print(len(a_json))
-            self.send_json_response(200, sanitize_config_for_web(a))
+            self.send_json_response(200, a)
             return 0
 
         if self.path == "/tv_test_conn":
