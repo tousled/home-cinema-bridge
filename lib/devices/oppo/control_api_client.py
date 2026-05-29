@@ -28,7 +28,7 @@ class OppoControlApiClient:
     def get_setup_menu(self) -> str:
         return self._get_text("getsetupmenu")
 
-    def sign_in(self, app_ip_address: str = "192.168.1.135") -> str:
+    def sign_in(self, app_ip_address: str = "192.168.50.110") -> str:
         # Keep the legacy payload shape for now. The hardcoded IP already existed in Xnoppo.py.
         payload = urllib.parse.quote(
             f'{{"appIconType":1,"appIpAddress":"{app_ip_address}"}}'

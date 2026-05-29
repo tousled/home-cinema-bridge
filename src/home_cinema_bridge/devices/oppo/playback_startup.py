@@ -50,10 +50,6 @@ class OppoPlaybackStartup:
                 self._initialize_control_session,
             )
             self._measure_preparation_step(
-                "refresh_device_state_before_network_playback",
-                self._refresh_device_state_before_network_playback,
-            )
-            self._measure_preparation_step(
                 "clear_previous_playback_startup_state",
                 self._clear_previous_playback_startup_state,
             )
@@ -160,15 +156,8 @@ class OppoPlaybackStartup:
             )
 
     def _initialize_control_session(self) -> None:
-        self._control_api.get_main_firmware_version()
-        self._control_api.get_device_list()
-        self._control_api.get_setup_menu()
         self._control_api.sign_in()
 
-    def _refresh_device_state_before_network_playback(self) -> None:
-        self._control_api.get_device_list()
-        self._control_api.get_global_info()
-        self._control_api.get_device_list()
 
     def _clear_previous_playback_startup_state(self) -> None:
         self._control_api.send_remote_key("EJT")
