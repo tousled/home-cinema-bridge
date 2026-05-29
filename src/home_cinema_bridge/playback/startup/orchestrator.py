@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import Callable
 
 from home_cinema_bridge.playback.startup.models import (
@@ -35,8 +36,14 @@ class PlaybackStartupOrchestrator:
         self,
         request: PlaybackOutputSwitchRequest,
     ) -> PlaybackOutputSwitchResult:
-        previous_tv_app_id = self._get_current_tv_app_id()
-        tv_input_result = self._switch_tv_to_oppo_input(request)
+        previous_tv_app_id = self._measure_output_switch_step(
+            "read_current_tv_app",
+            self._get_current_tv_app_id,
+        )
+        tv_input_result = self._measure_output_switch_step(
+            "switch_tv_to_oppo_input",
+            lambda: self._switch_tv_to_oppo_input(request),
+        )
 
         if not tv_input_result.successful:
             logger.warning(
@@ -51,10 +58,16 @@ class PlaybackStartupOrchestrator:
                 av_input_result=DeviceCommandResult.skipped("TV input switch failed."),
             )
 
-        av_power_result = self._power_on_av_receiver(request)
-        av_input_result = self._switch_av_receiver_to_oppo_input(
-            request,
-            av_power_result,
+        av_power_result = self._measure_output_switch_step(
+            "power_on_av_receiver",
+            lambda: self._power_on_av_receiver(request),
+        )
+        av_input_result = self._measure_output_switch_step(
+            "switch_av_receiver_to_oppo_input",
+            lambda: self._switch_av_receiver_to_oppo_input(
+                request,
+                av_power_result,
+            ),
         )
 
         return PlaybackOutputSwitchResult(
@@ -94,6 +107,16 @@ class PlaybackStartupOrchestrator:
                 "Could not read current TV app id before switching output."
             )
             return None
+
+    def _measure_output_switch_step(self, step_name: str, operation: Callable):
+        started_at = time.perf_counter()
+        result = operation()
+        logger.info(
+            "Playback output switch timing | step=%s | elapsed=%.3fs",
+            step_name,
+            time.perf_counter() - started_at,
+        )
+        return result
 
     def _switch_tv_to_oppo_input(
         self,

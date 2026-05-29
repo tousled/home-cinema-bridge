@@ -163,6 +163,8 @@ class OppoNetworkPlaybackStarter:
                 timeout=self.config["timeout_oppo_mount"],
             )
 
+        logging.debug("OPPO mount network folder raw response: %s", response_text)
+
         response, mounted_share = parse_mounted_share_response(
             response_text,
             server=network_folder.server_name,
@@ -171,7 +173,9 @@ class OppoNetworkPlaybackStarter:
         )
 
         return OppoNetworkFolderMountResult(
-            oppo_response=OppoCommandResponse.from_text(json.dumps(response)),
+            oppo_response=OppoCommandResponse.from_text(
+                response_text if mounted_share is None else json.dumps(response)
+            ),
             mounted_share=mounted_share,
         )
 

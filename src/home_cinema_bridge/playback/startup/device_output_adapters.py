@@ -134,19 +134,26 @@ class LegacyOppoPlaybackOutput(OppoPlaybackPort):
         self._network_playback = OppoNetworkPlaybackStarter(config)
 
     def prepare_for_playback_startup(self) -> DeviceCommandResult:
-        try:
-            self._control_api.get_main_firmware_version()
-            self._control_api.get_device_list()
-            self._control_api.get_setup_menu()
-            self._control_api.sign_in()
-            self._control_api.get_device_list()
-            self._control_api.get_global_info()
-            self._control_api.get_device_list()
-            self._control_api.send_remote_key("EJT")
+        started_at = time.perf_counter()
 
-            if self._config["BRDisc"] is True:
-                time.sleep(1)
-                self._control_api.send_remote_key("EJT")
+        try:
+            self._measure_preparation_step(
+                "initialize_control_session",
+                self._initialize_control_session,
+            )
+            self._measure_preparation_step(
+                "refresh_device_state_before_network_playback",
+                self._refresh_device_state_before_network_playback,
+            )
+            self._measure_preparation_step(
+                "clear_previous_playback_startup_state",
+                self._clear_previous_playback_startup_state,
+            )
+
+            logger.info(
+                "OPPO playback startup preparation timing | total=%.3fs",
+                time.perf_counter() - started_at,
+            )
 
             return DeviceCommandResult.success("OPPO prepared for playback startup.")
         except Exception as exc:
@@ -243,6 +250,37 @@ class LegacyOppoPlaybackOutput(OppoPlaybackPort):
                 playback_started_on_device=False,
                 detail=f"OPPO playback startup failed: {type(exc).__name__}: {exc}",
             )
+
+    def _initialize_control_session(self) -> None:
+        self._control_api.get_main_firmware_version()
+        self._control_api.get_device_list()
+        self._control_api.get_setup_menu()
+        self._control_api.sign_in()
+
+    def _refresh_device_state_before_network_playback(self) -> None:
+        self._control_api.get_device_list()
+        self._control_api.get_global_info()
+        self._control_api.get_device_list()
+
+    def _clear_previous_playback_startup_state(self) -> None:
+        self._control_api.send_remote_key("EJT")
+
+        if self._config["BRDisc"] is True:
+            time.sleep(1)
+            self._control_api.send_remote_key("EJT")
+
+    def _measure_preparation_step(
+        self,
+        step_name: str,
+        operation: Callable[[], None],
+    ) -> None:
+        started_at = time.perf_counter()
+        operation()
+        logger.info(
+            "OPPO playback startup preparation timing | step=%s | elapsed=%.3fs",
+            step_name,
+            time.perf_counter() - started_at,
+        )
 
     def get_playback_state(self) -> OppoPlaybackState:
         result = self._playback_status_client().query_playback_state()

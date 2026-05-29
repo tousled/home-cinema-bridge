@@ -2,6 +2,7 @@ import logging
 import time
 
 DEFAULT_INPUT_OBSERVATION_DELAYS_SECONDS = (0.0, 0.5, 1.0, 2.0, 3.0)
+MIN_STABLE_INPUT_CONFIRMATION_SECONDS = 2.0
 
 
 class AVInputRetrier:
@@ -56,6 +57,17 @@ class AVInputRetrier:
                 self.send_input_command(self.input_command)
                 retries += 1
 
+            if self._is_expected_input_stable(observed_input, delay):
+                logging.info(
+                    "%s expected input confirmed; stopping input observation | "
+                    "expected_input=%s | observed_input=%s | delay=%.1fs",
+                    self.receiver_name,
+                    self.expected_input,
+                    observed_input,
+                    delay,
+                )
+                break
+
         return result
 
     def _should_retry(self, observed_input, retries):
@@ -63,6 +75,12 @@ class AVInputRetrier:
             observed_input == self.redirected_input
             and self.expected_input != self.redirected_input
             and retries < self.max_retries
+        )
+
+    def _is_expected_input_stable(self, observed_input, delay):
+        return (
+            observed_input == self.expected_input
+            and delay >= MIN_STABLE_INPUT_CONFIRMATION_SECONDS
         )
 
 
