@@ -11,7 +11,9 @@ from home_cinema_bridge.playback.startup import (
     OppoPlaybackStartRequest,
     PlaybackOutputSwitchRequest,
     PlaybackStartupOrchestrator,
-    PlayerMediaFileLocation,
+)
+from home_cinema_bridge.playback.media_location import (
+    resolve_player_media_file_location,
 )
 from home_cinema_bridge.playback.startup.device_output_adapters import (
     LegacyAvReceiverOutput,
@@ -744,16 +746,19 @@ def playother(EmbySession, data, scripterx=False):
 
     movie = ItemInfo["Path"]
     Container = ItemInfo["Container"]
-    movie = resolve_oppo_movie_path(movie, EmbySession.config)
+    media_location = resolve_player_media_file_location(
+        emby_media_path=movie,
+        playback_file_format=Container,
+        path_mappings=EmbySession.config["servers"],
+    )
     logging.info("-----------------------------------------------------------")
-    servidor, carpeta, fichero = parse_oppo_path(movie)
-    logging.info("Servidor               : %s", servidor)
-    logging.info("Fichero                : %s", fichero)
-    logging.info("Carpeta                : %s", carpeta)
+    logging.info("Servidor               : %s", media_location.content_server)
+    logging.info("Fichero                : %s", media_location.playback_file_name)
+    logging.info("Carpeta                : %s", media_location.content_directory)
     logging.info("-----------------------------------------------------------")
-    EmbySession.server = servidor
-    EmbySession.folder = carpeta
-    EmbySession.filename = fichero
+    EmbySession.server = media_location.content_server
+    EmbySession.folder = media_location.content_directory
+    EmbySession.filename = media_location.playback_file_name
     EmbySession.playedtitle = ItemInfo["Name"]
     response_data6f = getdevicelist(EmbySession.config)
     device_list = json.loads(response_data6f)
@@ -761,23 +766,35 @@ def playother(EmbySession, data, scripterx=False):
     if EmbySession.config["DebugLevel"] > 0:
         print(device_list)
 
-    nfs = resolve_server_is_nfs(EmbySession.config, device_list, servidor)
+    nfs = resolve_server_is_nfs(
+        EmbySession.config,
+        device_list,
+        media_location.content_server,
+    )
 
     if nfs:
-        LoginNFS(EmbySession.config, servidor)
+        LoginNFS(EmbySession.config, media_location.content_server)
         response_data7 = mountSharedNFSFolder(
-            servidor, carpeta, "", "", EmbySession.config
+            media_location.content_server,
+            media_location.content_directory,
+            "",
+            "",
+            EmbySession.config,
         )
     else:
-        LoginSambaWithOutID(EmbySession.config, servidor)
+        LoginSambaWithOutID(EmbySession.config, media_location.content_server)
         response_data7 = mountSharedFolder(
-            servidor, carpeta, "", "", EmbySession.config
+            media_location.content_server,
+            media_location.content_directory,
+            "",
+            "",
+            EmbySession.config,
         )
 
     response_mount, mounted_share = parse_mounted_share_response(
         response_data7,
-        server=servidor,
-        folder=carpeta,
+        server=media_location.content_server,
+        folder=media_location.content_directory,
         is_nfs=nfs,
     )
 
@@ -785,8 +802,8 @@ def playother(EmbySession, data, scripterx=False):
         error = response_mount.get("retInfo", "No hay mas info")
         logging.warning(
             "Replay mount failed | server=%s | folder=%s | error=%s",
-            servidor,
-            carpeta,
+            media_location.content_server,
+            media_location.content_directory,
             error,
         )
 
@@ -794,9 +811,9 @@ def playother(EmbySession, data, scripterx=False):
             EmbySession.send_message2(
                 params["Session_id"],
                 EmbySession.lang["x_msg_error_mount"]
-                + servidor
+                + media_location.content_server
                 + "/"
-                + carpeta
+                + media_location.content_directory
                 + " - info:"
                 + error,
                 5000,
@@ -805,9 +822,9 @@ def playother(EmbySession, data, scripterx=False):
             EmbySession.send_user_message(
                 params["ControllingUserId"],
                 EmbySession.lang["x_msg_error_mount"]
-                + servidor
+                + media_location.content_server
                 + "/"
-                + carpeta
+                + media_location.content_directory
                 + " - info:"
                 + error,
                 5000,
@@ -817,11 +834,15 @@ def playother(EmbySession, data, scripterx=False):
         return
 
     if Container == "bluray":
-        response_data8 = checkfolderhasbdmv(EmbySession.config, mounted_share, fichero)
+        response_data8 = checkfolderhasbdmv(
+            EmbySession.config,
+            mounted_share,
+            media_location.playback_file_name,
+        )
     else:
         response_data8 = playnormalfile(
             mounted_share,
-            fichero,
+            media_location.playback_file_name,
             "0",
             EmbySession.config,
         )
@@ -1001,17 +1022,20 @@ def playto_file(EmbySession, data, scripterx=False):
             movie = item_info["Path"]
             container = item_info["Container"]
             logging.info("-----------------------------------------------------------")
-            movie = resolve_oppo_movie_path(movie, EmbySession.config)
+            media_location = resolve_player_media_file_location(
+                emby_media_path=movie,
+                playback_file_format=container,
+                path_mappings=EmbySession.config["servers"],
+            )
             logging.info("-----------------------------------------------------------")
-            servidor, carpeta, fichero = parse_oppo_path(movie)
 
-        logging.info("Servidor               : %s", servidor)
-        logging.info("Fichero                : %s", fichero)
-        logging.info("Carpeta                : %s", carpeta)
+        logging.info("Servidor               : %s", media_location.content_server)
+        logging.info("Fichero                : %s", media_location.playback_file_name)
+        logging.info("Carpeta                : %s", media_location.content_directory)
         logging.info("-----------------------------------------------------------")
-        EmbySession.server = servidor
-        EmbySession.folder = carpeta
-        EmbySession.filename = fichero
+        EmbySession.server = media_location.content_server
+        EmbySession.folder = media_location.content_directory
+        EmbySession.filename = media_location.playback_file_name
         EmbySession.playedtitle = item_info["Name"]
 
 
@@ -1055,12 +1079,7 @@ def playto_file(EmbySession, data, scripterx=False):
                 EmbySession.send_user_message(params["ControllingUserId"], message, 999)
 
         oppo_playback_start_request = OppoPlaybackStartRequest(
-            media_location=PlayerMediaFileLocation(
-                content_server=servidor,
-                content_directory=carpeta,
-                playback_file_name=fichero,
-                playback_file_format=container,
-            ),
+            media_location=media_location,
             wait_for_nfs_share=EmbySession.config["wait_nfs"] is True,
             assume_player_already_on=EmbySession.config["Always_ON"] is True,
             startup_timeout_seconds=EmbySession.config["timeout_oppo_playitem"],
@@ -1091,16 +1110,16 @@ def playto_file(EmbySession, data, scripterx=False):
             if not oppo_playback_start_result.media_mounted:
                 error_message = (
                     EmbySession.lang["x_msg_error_mount"]
-                    + servidor
+                    + media_location.content_server
                     + "/"
-                    + carpeta
+                    + media_location.content_directory
                     + " - info:"
                     + str(oppo_playback_start_result.detail)
                 )
             elif not oppo_playback_start_result.playback_command_accepted:
                 error_message = (
                     EmbySession.lang["x_msg_error_play"]
-                    + fichero
+                    + media_location.playback_file_name
                     + " - info:"
                     + str(oppo_playback_start_result.detail)
                 )
