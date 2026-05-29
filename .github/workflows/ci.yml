@@ -13,6 +13,8 @@ on:
 jobs:
   python-compile:
     runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: src
 
     steps:
       - uses: actions/checkout@v4
@@ -29,7 +31,7 @@ jobs:
 
       - name: Compile Python files
         run: |
-          python -m compileall lib tools xnoppo_web.py
+          python -m compileall lib src tools xnoppo_web.py
 
       - name: Check undefined Python names
         run: |
