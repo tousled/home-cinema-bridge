@@ -94,6 +94,10 @@ class OppoPlaybackStartup:
             if not request.assume_player_already_on:
                 time.sleep(5)
 
+            # Purpose: asks the OPPO for its current setup/menu state. In the legacy
+            # flow this acted as a device refresh before mounting a network folder.
+            # TEST 1: try removing this legacy refresh first.
+            # Validate ISO, MKV, resume, selected subtitles, and no-subtitle playback.
             self._control_api.get_setup_menu()
 
             mount_result = self._network_playback.mount_network_folder(network_folder)
@@ -156,14 +160,26 @@ class OppoPlaybackStartup:
             )
 
     def _initialize_control_session(self) -> None:
+        # Purpose: registers this app/session with the OPPO HTTP control API.
+        # The payload includes the Emby/media-server host as appIpAddress.
+        # TEST 4: try removing sign_in only after mount/playback works without the
+        # legacy refreshes below. It may still be needed to activate the OPPO HTTP API.
         self._control_api.sign_in()
 
 
     def _clear_previous_playback_startup_state(self) -> None:
+        # Purpose: sends the remote EJECT command to force the OPPO out of previous
+        # playback/disc/menu state before starting the next network playback.
+        # TEST 3: try removing this EJT after testing the device-list polling cleanup.
+        # Validate a second playback immediately after stopping a previous one.
         self._control_api.send_remote_key("EJT")
 
         if self._config["BRDisc"] is True:
             time.sleep(1)
+            # Purpose: legacy extra EJECT for Blu-ray/full-disc mode, probably meant
+            # to clear a stubborn disc/menu state before ISO/BDMV startup.
+            # TEST 3b: if the first EJT is still needed, test whether this BRDisc-only
+            # duplicate can be removed for ISO / full Blu-ray startup.
             self._control_api.send_remote_key("EJT")
 
     def _measure_preparation_step(
@@ -184,11 +200,22 @@ class OppoPlaybackStartup:
         request: OppoPlaybackStartRequest,
     ) -> str:
         expected_text = 'sub_type":"nfs' if request.wait_for_nfs_share else "sub_type"
+        # Purpose: fetches the OPPO-visible network devices/shares so we can resolve
+        # whether the media server should be mounted through NFS or Samba.
         device_list_text = self._control_api.get_device_list()
 
+        # Purpose: legacy polling while the expected network-share marker is not
+        # considered ready. The current find(...) == 0 condition is suspicious and
+        # should be validated against real OPPO responses before keeping it.
+        # TEST 2: try replacing this polling loop with the single get_device_list()
+        # above. If fresh NFS startup fails, restore a bounded wait with a timeout.
         while device_list_text.find(expected_text) == 0:
             time.sleep(1)
+            # Purpose: retries the OPPO network-device list after a short wait.
             device_list_text = self._control_api.get_device_list()
+            # Purpose: queries OPPO power state through a remote key command while
+            # waiting for shares; this looks like wake/refresh legacy coupling.
+            # TEST 2b: if polling is still needed, try removing only this QPW query.
             power_query_result = self._control_api.send_remote_key("QPW")
             logger.debug("Query POWER ON: %s", power_query_result)
 
