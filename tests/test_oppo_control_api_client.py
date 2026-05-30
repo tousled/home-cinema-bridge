@@ -9,7 +9,7 @@ from lib.devices.oppo.control_api_client import (
 
 
 class RecordingOppoControlApiClient(OppoControlApiClient):
-    def _get_text(self, endpoint, query=None, *, timeout=None):
+    def _call_player_endpoint(self, endpoint, query=None, *, timeout=None):
         object.__setattr__(self, "last_endpoint", endpoint)
         object.__setattr__(self, "last_query", query)
         return "OK"
@@ -57,6 +57,49 @@ class OppoControlApiClientTest(unittest.TestCase):
 
         self.assertEqual("192.168.50.35", client.player_host)
         self.assertEqual("192.168.50.110", client.media_server_host)
+
+    def test_set_play_time_uses_media_control_endpoint_payload(self):
+        client = RecordingOppoControlApiClient(player_host="192.168.50.35")
+
+        response = client.set_play_time(3_723_000_0000)
+
+        self.assertEqual("OK", response)
+        self.assertEqual("setplaytime", client.last_endpoint)
+        self.assertEqual(
+            {
+                "h": 1,
+                "m": 2,
+                "s": 3,
+            },
+            json.loads(client.last_query),
+        )
+
+    def test_select_audio_track_uses_media_control_endpoint_payload(self):
+        client = RecordingOppoControlApiClient(player_host="192.168.50.35")
+
+        response = client.select_audio_track(2)
+
+        self.assertEqual("OK", response)
+        self.assertEqual("setaudiomenulist", client.last_endpoint)
+        self.assertEqual({"cur_index": 2}, json.loads(client.last_query))
+
+    def test_select_subtitle_track_uses_media_control_endpoint_payload(self):
+        client = RecordingOppoControlApiClient(player_host="192.168.50.35")
+
+        response = client.select_subtitle_track(1)
+
+        self.assertEqual("OK", response)
+        self.assertEqual("setsubttmenulist", client.last_endpoint)
+        self.assertEqual({"cur_index": 1}, json.loads(client.last_query))
+
+    def test_get_subtitle_menu_uses_media_control_endpoint(self):
+        client = RecordingOppoControlApiClient(player_host="192.168.50.35")
+
+        response = client.get_subtitle_menu()
+
+        self.assertEqual("OK", response)
+        self.assertEqual("getsubtitlemenulist", client.last_endpoint)
+        self.assertEqual("", client.last_query)
 
 
 if __name__ == "__main__":

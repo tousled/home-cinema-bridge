@@ -25,10 +25,10 @@ class OppoControlApiClient:
         )
 
     def get_main_firmware_version(self) -> str:
-        return self._get_text("getmainfirmwareversion")
+        return self._call_player_endpoint("getmainfirmwareversion")
 
     def get_setup_menu(self) -> str:
-        return self._get_text("getsetupmenu")
+        return self._call_player_endpoint("getsetupmenu")
 
     def sign_in(self, app_ip_address: str | None = None) -> str:
         effective_app_ip_address = app_ip_address or self.media_server_host or ""
@@ -41,28 +41,68 @@ class OppoControlApiClient:
                 separators=(",", ":"),
             )
         )
-        return self._get_text("signin", payload)
+        return self._call_player_endpoint("signin", payload)
 
     def get_device_list(self) -> str:
-        return self._get_text("getdevicelist")
+        return self._call_player_endpoint("getdevicelist")
 
     def get_global_info(self) -> str:
-        return self._get_text("getglobalinfo")
+        return self._call_player_endpoint("getglobalinfo")
 
     def get_playing_time(self) -> str:
-        return self._get_text("getplayingtime")
+        return self._call_player_endpoint("getplayingtime")
+
+    def set_play_time(self, position_ticks: int) -> str:
+        total_seconds = int(position_ticks / 10_000_000)
+        hours = total_seconds // 3600
+        minutes = (total_seconds % 3600) // 60
+        seconds = total_seconds % 60
+
+        payload = json.dumps(
+            {
+                "h": hours,
+                "m": minutes,
+                "s": seconds,
+            },
+            separators=(",", ":"),
+        )
+
+        return self._call_player_endpoint("setplaytime", payload)
+
+    def select_audio_track(self, audio_index: int) -> str:
+        payload = json.dumps(
+            {
+                "cur_index": int(audio_index),
+            },
+            separators=(",", ":"),
+        )
+
+        return self._call_player_endpoint("setaudiomenulist", payload)
+
+    def get_subtitle_menu(self) -> str:
+        return self._call_player_endpoint("getsubtitlemenulist", "")
+
+    def select_subtitle_track(self, subtitle_index: int) -> str:
+        payload = json.dumps(
+            {
+                "cur_index": int(subtitle_index),
+            },
+            separators=(",", ":"),
+        )
+
+        return self._call_player_endpoint("setsubttmenulist", payload)
 
     def send_remote_key(self, key: str) -> str:
         payload = urllib.parse.quote(json.dumps({"key": key}))
-        return self._get_text("sendremotekey", payload)
+        return self._call_player_endpoint("sendremotekey", payload)
 
     def login_nfs_server(self, server: str) -> str:
-        payload = f'{{"serverName":"{server}"}}'
-        return self._get_text("loginNfsServer", payload)
+        payload = json.dumps({"serverName": server})
+        return self._call_player_endpoint("loginNfsServer", payload)
 
     def login_samba_without_id(self, server: str) -> str:
-        payload = f'{{"serverName":"{server}"}}'
-        return self._get_text("loginSambaWithOutID", payload)
+        payload = json.dumps({"serverName": server})
+        return self._call_player_endpoint("loginSambaWithOutID", payload)
 
     def mount_samba_folder_with_id(
         self,
@@ -73,16 +113,18 @@ class OppoControlApiClient:
         *,
         timeout: int | float,
     ) -> str:
-        payload = (
-            f'{{"server":"{server}",'
-            f'"bWithID":1,'
-            f'"folder":"{urllib.parse.quote(folder)}",'
-            f'"userName":"{username}",'
-            f'"password":"{password}",'
-            f'"bRememberID":1}}'
+        payload = json.dumps(
+            {
+                "server": server,
+                "bWithID": 1,
+                "folder": urllib.parse.quote(folder),
+                "userName": username,
+                "password": password,
+                "bRememberID": 1,
+            }
         )
 
-        return self._get_text_or_error(
+        return self._call_player_endpoint_or_error(
             "mountSharedFolder",
             payload,
             timeout=timeout,
@@ -96,16 +138,18 @@ class OppoControlApiClient:
         *,
         timeout: int | float,
     ) -> str:
-        payload = (
-            f'{{"server":"{server}",'
-            f'"bWithID":0,'
-            f'"folder":"{urllib.parse.quote(folder)}",'
-            f'"userName":"",'
-            f'"password":"",'
-            f'"bRememberID":0}}'
+        payload = json.dumps(
+            {
+                "server": server,
+                "bWithID": 0,
+                "folder": urllib.parse.quote(folder),
+                "userName": "",
+                "password": "",
+                "bRememberID": 0,
+            }
         )
 
-        return self._get_text_or_error(
+        return self._call_player_endpoint_or_error(
             "mountSharedFolder",
             payload,
             timeout=timeout,
@@ -119,12 +163,14 @@ class OppoControlApiClient:
         *,
         timeout: int | float,
     ) -> str:
-        payload = (
-            f'{{"server":"{server}",'
-            f'"folder":"{urllib.parse.quote(folder)}"}}'
+        payload = json.dumps(
+            {
+                "server": server,
+                "folder": urllib.parse.quote(folder),
+            }
         )
 
-        response_text = self._get_text_or_error(
+        response_text = self._call_player_endpoint_or_error(
             "mountNfsSharedFolder",
             payload,
             timeout=timeout,
@@ -161,14 +207,13 @@ class OppoControlApiClient:
             )
         )
 
-        return self._get_text_or_error(
+        return self._call_player_endpoint_or_error(
             "playnormalfile",
             payload,
             timeout=timeout,
             error='{"success":false,"retInfo":"Timeout in Play Request"}',
         )
 
-    
     def mounted_folder_contains_blu_ray_structure(
         self,
         mounted_share: OppoMountedShare,
@@ -181,19 +226,21 @@ class OppoControlApiClient:
 
         encoded_relative_path = urllib.parse.quote(relative_path, safe="/")
         folder_path = (
-            mounted_root if not encoded_relative_path else f"{mounted_root}/{encoded_relative_path}"
+            mounted_root
+            if not encoded_relative_path
+            else f"{mounted_root}/{encoded_relative_path}"
         )
 
         payload = json.dumps({"folderpath": folder_path})
 
-        return self._get_text_or_error(
+        return self._call_player_endpoint_or_error(
             "checkfolderhasBDMV",
             payload,
             timeout=timeout,
             error='{"success":false,"retInfo":"Timeout in Play Request"}',
         )
 
-    def _get_text(
+    def _call_player_endpoint(
         self,
         endpoint: str,
         query: str | None = None,
@@ -206,7 +253,7 @@ class OppoControlApiClient:
         response = requests.get(url, headers={}, timeout=timeout)
         return response.text
 
-    def _get_text_or_error(
+    def _call_player_endpoint_or_error(
         self,
         endpoint: str,
         query: str,
@@ -215,7 +262,7 @@ class OppoControlApiClient:
         error: str,
     ) -> str:
         try:
-            return self._get_text(endpoint, query, timeout=timeout)
+            return self._call_player_endpoint(endpoint, query, timeout=timeout)
         except requests.RequestException:
             return error
 

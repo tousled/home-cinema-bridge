@@ -8,6 +8,8 @@ from home_cinema_bridge.playback.startup.models import (
     DeviceCommandResult,
     PlaybackOutputSwitchRequest,
     PlaybackOutputSwitchResult,
+    OppoPlaybackPosition,
+    OppoPlaybackState,
     OppoPlaybackStartRequest,
     OppoPlaybackStartResult,
 )
@@ -83,21 +85,25 @@ class PlaybackStartupOrchestrator:
         request: OppoPlaybackStartRequest,
         on_waiting: Callable[[int], None] | None = None,
     ) -> OppoPlaybackStartResult:
-
-        prepare_result = self._oppo_playback.prepare_for_playback_startup()
-
-        if not prepare_result.successful:
-            return OppoPlaybackStartResult(
-                media_mounted=False,
-                playback_command_accepted=False,
-                playback_started_on_device=False,
-                detail=prepare_result.detail,
-            )
-
         return self._oppo_playback.start_playback(
             request,
             on_waiting=on_waiting,
         )
+
+    def get_oppo_playback_position(self) -> OppoPlaybackPosition:
+        return self._oppo_playback.get_playback_position()
+
+    def get_oppo_playback_state(self) -> OppoPlaybackState:
+        return self._oppo_playback.get_playback_state()
+
+    def seek_oppo_to(self, position_ticks: int) -> DeviceCommandResult:
+        return self._oppo_playback.seek_to(position_ticks)
+
+    def select_oppo_audio_track(self, audio_index: int) -> DeviceCommandResult:
+        return self._oppo_playback.select_audio_track(audio_index)
+
+    def select_oppo_subtitle_track(self, subtitle_index: int) -> DeviceCommandResult:
+        return self._oppo_playback.select_subtitle_track(subtitle_index)
 
     def _get_current_tv_app_id(self) -> str | None:
         try:
