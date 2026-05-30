@@ -7,6 +7,10 @@ import urllib.parse
 
 import requests
 
+from home_cinema_bridge.media_servers.emby import (
+    MediaServerPlaybackContext,
+    MediaServerPlaybackEventPublisher,
+)
 from home_cinema_bridge.playback.startup import (
     OppoPlaybackStartRequest,
     PlaybackOutputSwitchRequest,
@@ -939,6 +943,15 @@ def playto_file(EmbySession, data, scripterx=False):
 
     with startup_timer.measure_step("process_emby_payload"):
         params = EmbySession.process_data(data)
+        media_server_playback_context = MediaServerPlaybackContext.from_event(
+            data,
+            load_user_item=EmbySession.get_item_info,
+        )
+        media_server_playback_event_publisher = MediaServerPlaybackEventPublisher(
+            EmbySession.client,
+            bridge_session_id=EmbySession.user_info["SessionInfo"]["Id"],
+            context=media_server_playback_context,
+        )
 
     with startup_timer.measure_step("load_emby_item_info"):
         item_info = EmbySession.get_item_info2(
@@ -1095,9 +1108,9 @@ def playto_file(EmbySession, data, scripterx=False):
                     params["ControllingUserId"], error_message, 5000
                 )
         else:
-            with startup_timer.measure_step("notify_emby_playback_started"):
+            with startup_timer.measure_step("notify_media_server_playback_started"):
                 EmbySession.playstate = "Playing"
-                EmbySession.playnow(data)
+                media_server_playback_event_publisher.started()
 
             if EmbySession.config["DebugLevel"] > 0:
                 print(params["auto_resume"])
@@ -1204,15 +1217,11 @@ def playto_file(EmbySession, data, scripterx=False):
                         last_valid_total_time = total_time
 
                     if scripterx == False:
-                        EmbySession.playingprogress(
-                            EmbySession.currentdata,
-                            positionticks,
-                            totalticks,
-                            ispaused,
-                            ismuted,
-                        )
-                        EmbySession.setitemplaybackposition(
-                            EmbySession.currentdata, positionticks, False
+                        media_server_playback_event_publisher.progress(
+                            position_ticks=positionticks,
+                            runtime_ticks=totalticks,
+                            is_paused=ispaused,
+                            is_muted=ismuted,
                         )
 
             if playingtime["cur_time"] <= 0 and last_valid_positionticks > 0:
@@ -1252,15 +1261,21 @@ def playto_file(EmbySession, data, scripterx=False):
                 )
             log_oppo_qpl_state(EmbySession.config, "after_getglobalinfo_loop")
 
-            EmbySession.playingstopped(
-                EmbySession.currentdata, positionticks, ispaused, ismuted
+            media_server_playback_event_publisher.stopped(
+                position_ticks=positionticks,
+                runtime_ticks=totalticks,
+                is_paused=ispaused,
+                is_muted=ismuted,
             )
             played = False
             if totalticks > 0:
                 if (positionticks / totalticks) > 0.95:
                     played = True
-            EmbySession.setitemplaybackposition(
-                EmbySession.currentdata, positionticks, played
+            logging.info(
+                "Emby playback stopped | position_ticks=%s | runtime_ticks=%s | played=%s",
+                positionticks,
+                totalticks,
+                played,
             )
             log_oppo_qpl_state(
                 EmbySession.config,

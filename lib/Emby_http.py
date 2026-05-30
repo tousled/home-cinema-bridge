@@ -93,7 +93,7 @@ class EmbyHttp(threading.Thread):
                       "SubtitleStreamIndex": params["subtitle_stream_index"],
                       "IsPaused": False,
                       "IsMuted": False,
-                      "PositionTicks": 0,
+                      "PositionTicks": params["auto_resume"],
                       "PlayMethod": "DirectPlay",
                       "PlaySessionId": params["play_session_id"],
                       "RepeatMode": "RepeatNone"
@@ -124,8 +124,9 @@ class EmbyHttp(threading.Thread):
                       "PositionTicks": positionticks,
                       "RunTimeTicks": totalticks,
                       "PlayMethod": "DirectPlay",
+                      "PlaySessionId": params["play_session_id"],
                       "RepeatMode": "RepeatNone",
-                      "EventName": "timeupdate"
+                      "EventName": "TimeUpdate"
                         }
         response = self.client.report_playback_progress(message_data)
         if self.config["DebugLevel"]>0: print (response.text)
@@ -147,8 +148,8 @@ class EmbyHttp(threading.Thread):
                       "IsMuted": ismuted,
                       "PositionTicks": positionticks,
                       "PlayMethod": "DirectPlay",
+                      "PlaySessionId": params["play_session_id"],
                       "RepeatMode": "RepeatNone",
-                      "EventName": "timeupdate"
                         }
         response = self.client.notify_playback_stopped(message_data)
         if self.config["DebugLevel"]>0: print (response.text)

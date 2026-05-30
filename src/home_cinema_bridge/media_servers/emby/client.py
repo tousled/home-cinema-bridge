@@ -76,13 +76,13 @@ class EmbyClient:
     def report_playback_progress(self, payload):
         return self.post(
             "/emby/Sessions/Playing/Progress?format=json",
-            data=payload,
+            json=payload,
         )
 
     def notify_playback_stopped(self, payload):
         return self.post(
             "/emby/Sessions/Playing/Stopped?format=json",
-            data=payload,
+            json=payload,
         )
 
     def set_item_playback_position(self, user_id, item_id, payload):

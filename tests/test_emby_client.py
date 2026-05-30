@@ -72,6 +72,50 @@ class EmbyClientTest(unittest.TestCase):
         self.assertEqual({"ItemId": "movie1"}, json_payload)
         self.assertEqual("token", headers["X-MediaBrowser-Token"])
 
+    def test_playback_progress_posts_json_payload(self):
+        http = RecordingHttpSession()
+        client = EmbyClient(
+            "http://emby.local:8096/",
+            "pedro",
+            "secret",
+            http_session=http,
+        )
+        client.user_info = {"AccessToken": "token", "User": {"Id": "user1"}}
+
+        client.report_playback_progress({"ItemId": "movie1"})
+
+        method, url, data, json_payload, headers = http.calls[0]
+        self.assertEqual("post", method)
+        self.assertEqual(
+            "http://emby.local:8096/emby/Sessions/Playing/Progress?format=json",
+            url,
+        )
+        self.assertIsNone(data)
+        self.assertEqual({"ItemId": "movie1"}, json_payload)
+        self.assertEqual("token", headers["X-MediaBrowser-Token"])
+
+    def test_playback_stopped_posts_json_payload(self):
+        http = RecordingHttpSession()
+        client = EmbyClient(
+            "http://emby.local:8096/",
+            "pedro",
+            "secret",
+            http_session=http,
+        )
+        client.user_info = {"AccessToken": "token", "User": {"Id": "user1"}}
+
+        client.notify_playback_stopped({"ItemId": "movie1"})
+
+        method, url, data, json_payload, headers = http.calls[0]
+        self.assertEqual("post", method)
+        self.assertEqual(
+            "http://emby.local:8096/emby/Sessions/Playing/Stopped?format=json",
+            url,
+        )
+        self.assertIsNone(data)
+        self.assertEqual({"ItemId": "movie1"}, json_payload)
+        self.assertEqual("token", headers["X-MediaBrowser-Token"])
+
     def test_accepts_absolute_url_for_legacy_callers(self):
         http = RecordingHttpSession()
         client = EmbyClient(
