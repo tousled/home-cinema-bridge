@@ -1,15 +1,9 @@
-import hashlib
-from urllib.parse import urlparse
-from urllib.parse import quote
-import urllib
-import requests
 import json
-import os
-import sys
-import socket
-import time
 import threading
 import logging
+
+from home_cinema_bridge.media_servers.emby import EmbyClient
+
 
 class EmbyHttp(threading.Thread):
     config=None
@@ -24,32 +18,12 @@ class EmbyHttp(threading.Thread):
     def __init__(self,config):
         self.config=config
         threading.Thread.__init__(self)
+        self.client = EmbyClient.from_config(config)
         self.user_info = self.authenticate()
         logging.info('EmbyHttp Iniciado')
 
     def authenticate(self):
-
-        url = self.config.get("emby_server") + "/Users/AuthenticateByName?format=json"
-        pwd_pre = self.config.get("user_password", "").encode('utf-8')
-        pwd_sha = hashlib.sha1(pwd_pre).hexdigest()
-
-        user_name = quote(self.config.get("user_name", ""))
-        pwd_text = quote(self.config.get("user_password", ""))
-
-        message_data = {}
-        message_data["username"] = user_name
-        message_data["password"] = pwd_sha
-#        message_data["pw"] = pwd_text
-        message_data["pw"] = pwd_pre
-
-        headers = self.get_headers()
-
-#        print ("Auth Url     : %s" % url)
-#        print ("Auth Msg     : %s" % message_data)
-#        print ("Auth Headers : %s" % headers)
-        response = requests.post(url, data=message_data, headers=headers)
-#        print(response.text)
-        return response.json()
+        return self.client.authenticate()
 
     def process_data(self, data):
         startat = data.get("StartPositionTicks")
@@ -108,7 +82,6 @@ class EmbyHttp(threading.Thread):
 
     def playnow(self,data):
 
-        url = self.config.get("emby_server") + '/emby/Sessions/Playing/?format=json'
         params = self.process_data(data)
         session_info = self.user_info["SessionInfo"]
         message_data = {
@@ -125,9 +98,7 @@ class EmbyHttp(threading.Thread):
                       "PlaySessionId": params["play_session_id"],
                       "RepeatMode": "RepeatNone"
                         }
-        headers = self.get_headers(self.user_info)
-    
-        response = requests.post(url, json=message_data, headers=headers)
+        response = self.client.notify_playback_started(message_data)
         logging.debug(
             "Emby playback started response | status=%s | body=%s",
             response.status_code,
@@ -139,7 +110,6 @@ class EmbyHttp(threading.Thread):
 
     def playingprogress(self,data,positionticks,totalticks,ispaused,ismuted):
 
-        url = self.config.get("emby_server") + '/emby/Sessions/Playing/Progress?format=json'
         params = self.process_data(data)
         session_info = self.user_info["SessionInfo"]
         message_data = {
@@ -157,16 +127,13 @@ class EmbyHttp(threading.Thread):
                       "RepeatMode": "RepeatNone",
                       "EventName": "timeupdate"
                         }
-        headers = self.get_headers(self.user_info)
-    
-        response = requests.post(url, data=message_data, headers=headers)
+        response = self.client.report_playback_progress(message_data)
         if self.config["DebugLevel"]>0: print (response.text)
 
         return response
 
     def playingstopped(self,data,positionticks,ispaused,ismuted):
 
-        url = self.config.get("emby_server") + '/emby/Sessions/Playing/Stopped?format=json'
         params = self.process_data(data)
         session_info = self.user_info["SessionInfo"]
         message_data = {
@@ -183,9 +150,7 @@ class EmbyHttp(threading.Thread):
                       "RepeatMode": "RepeatNone",
                       "EventName": "timeupdate"
                         }
-        headers = self.get_headers(self.user_info)
-    
-        response = requests.post(url, data=message_data, headers=headers)
+        response = self.client.notify_playback_stopped(message_data)
         if self.config["DebugLevel"]>0: print (response.text)
 
         return response
@@ -193,66 +158,47 @@ class EmbyHttp(threading.Thread):
     def setitemplaybackposition(self,data,positionticks,played):
 
         params = self.process_data(data)
-        url = self.config.get("emby_server") + '/Users/' + str(self.user_info["User"]["Id"]) + '/Items/' + str(params["item_id"]) +'/UserData?format=json'
+        user_id = params.get("ControllingUserId") or self.user_info["User"]["Id"]
         
         message_data = {
                     "played" : played,
                     "PlaybackPositionTicks" : positionticks
                         }
-        headers = self.get_headers(self.user_info)
         logging.debug ('setitemplaybackposition data: %s',message_data)
-        response = requests.post(url, data=message_data, headers=headers)
-        logging.debug ('setitemplaybackposition respuesta: %s',response.text)
+        response = self.client.set_item_playback_position(
+            user_id,
+            params["item_id"],
+            message_data,
+        )
+        logging.debug(
+            'setitemplaybackposition respuesta: status=%s body=%s',
+            response.status_code,
+            response.text,
+        )
 
         return response
 
-
     def playback_stop(self,session_id):
 
-        url = self.config.get("emby_server") + '/emby/Sessions/' + str(session_id) + "/Playing/Stop?format=json"
         message_data = {}
         message_data["Command"] = 'Stop'
-        message_data["SeekPositionTicks"] = 0
-        message_data["ControllingUserId"] = 'string'
-    
-        headers = self.get_headers(self.user_info)
-    
-        response = requests.post(url, data=message_data, headers=headers)
+
+        response = self.client.stop_session_playback(session_id, message_data)
         if self.config["DebugLevel"]>0: print (response.text)
 
         return response
 
 
     def get_headers(self,user_info=None):
-
-        auth_string = "MediaBrowser Client=\"Emby Xnoppo\",Device=\"Xnoppo\",DeviceId=\"Xnoppo\",Version=\"0.5\""
-
-        if user_info:
-            auth_string += ",UserId=\"" + user_info["User"]["Id"] + "\""
-
-        headers = {}
-
-        if user_info:
-            headers["X-MediaBrowser-Token"] = user_info["AccessToken"]
-
-        headers["Accept-encoding"] = "gzip"
-        headers["Accept-Charset"] = "UTF-8,*"
-
-        headers["X-Emby-Authorization"] = auth_string
-
-        return headers
+        return self.client.get_headers(user_info)
 
     def send_message2(self,session_id, sms_txt, timeout=3500):
-        url = self.config.get("emby_server") + '/emby/Sessions/' + session_id + "/Message?Text=" + sms_txt + "&Header=Notification&TimeoutMs=" + str(timeout)
-        message_data = {}
-        headers = self.get_headers(self.user_info)
-        response = requests.post(url, data=message_data, headers=headers)
+        response = self.client.send_session_message(session_id, sms_txt, timeout)
         if self.config["DebugLevel"]>0: print (response.text)
 
         return response
 
     def set_capabilities(self):
-        url = self.config.get("emby_server") + '/emby/Sessions/Capabilities/Full?format=json'
         message_data = {
                 'IconUrl': "https://img.alicdn.com/imgextra/i1/1840220527/O1CN018lXYlv1FlPES6Bgcw_!!1840220527.png",
                 'SupportsMediaControl': True,
@@ -291,20 +237,20 @@ class EmbyHttp(threading.Thread):
                                       "PlayMediaSource"],
                 'DeviceProfile':{}
             }
-        headers = self.get_headers(self.user_info)
         if self.config["DebugLevel"]>0: print(message_data)
-        response = requests.post(url, data=message_data, headers=headers)
+        response = self.client.set_capabilities(message_data)
         if self.config["DebugLevel"]>0: print (response.text)
 
         return response
 
     def set_movie(self,session_id,item_id,item_type,item_name):
 
-        url = self.config.get("emby_server") + '/emby/Sessions/' + str(session_id) + "/Viewing?ItemType=" + str(item_type) + "&ItemId=" + str(item_id) + '&ItemName=' + str(item_name)
-
-        message_data = {}
-        headers = self.get_headers(self.user_info)
-        response = requests.post(url, data=message_data, headers=headers)
+        response = self.client.set_session_viewing(
+            session_id,
+            item_type,
+            item_id,
+            item_name,
+        )
         if self.config["DebugLevel"]>0: print (response.text)
 
         return response
@@ -320,12 +266,11 @@ class EmbyHttp(threading.Thread):
             user_id = user_info["User"]["Id"]
             url = url.replace("{userid}", user_id)
 
-        headers = self.get_headers(user_info)
         #print (url)
         logging.debug(url)
-        response = requests.get(url, headers=headers)
-        #print (response.text)
-        return response.text
+        response_text = self.client.get_text(url)
+        #print (response_text)
+        return response_text
 
 
     def send_user_message(self,user_id,message,timeout=3500):

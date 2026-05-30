@@ -947,11 +947,6 @@ def playto_file(EmbySession, data, scripterx=False):
             params["media_source_id"],
         )
 
-    with startup_timer.measure_step("stop_emby_client_playback"):
-        if scripterx:
-            if EmbySession.config["DebugLevel"] > 0:
-                print("Paramos reproduccion en el dispositivo")
-            EmbySession.playback_stop(params["Session_id"])
     movie = ""
     with startup_timer.measure_step("ensure_oppo_control_api_available"):
         if scripterx:
