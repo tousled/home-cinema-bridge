@@ -52,6 +52,46 @@ class OppoControlApiClient:
     def get_playing_time(self) -> str:
         return self._call_player_endpoint("getplayingtime")
 
+    def set_play_time(self, position_ticks: int) -> str:
+        total_seconds = int(position_ticks / 10_000_000)
+        hours = total_seconds // 3600
+        minutes = (total_seconds % 3600) // 60
+        seconds = total_seconds % 60
+
+        payload = json.dumps(
+            {
+                "h": hours,
+                "m": minutes,
+                "s": seconds,
+            },
+            separators=(",", ":"),
+        )
+
+        return self._call_player_endpoint("setplaytime", payload)
+
+    def select_audio_track(self, audio_index: int) -> str:
+        payload = json.dumps(
+            {
+                "cur_index": int(audio_index),
+            },
+            separators=(",", ":"),
+        )
+
+        return self._call_player_endpoint("setaudiomenulist", payload)
+
+    def get_subtitle_menu(self) -> str:
+        return self._call_player_endpoint("getsubtitlemenulist", "")
+
+    def select_subtitle_track(self, subtitle_index: int) -> str:
+        payload = json.dumps(
+            {
+                "cur_index": int(subtitle_index),
+            },
+            separators=(",", ":"),
+        )
+
+        return self._call_player_endpoint("setsubttmenulist", payload)
+
     def send_remote_key(self, key: str) -> str:
         payload = urllib.parse.quote(json.dumps({"key": key}))
         return self._call_player_endpoint("sendremotekey", payload)

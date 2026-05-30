@@ -37,7 +37,6 @@ from .devices.oppo.legacy_network_compat import (
 
 from home_cinema_bridge.playback.timing import PlaybackStartupTimer
 
-from .oppo_autoscript import unmount_oppo_path
 from .Xnoppo_AVR import (
     av_power_off,
 )
@@ -469,40 +468,24 @@ def navigate_folder(path, config):
 
 def setplaytime(config, playticks):
     logging.debug("setplaytime")
-    secs_total = playticks / 10000000
-    h = secs_total // 3600
-    m = (secs_total % 3600) // 60
-    s = (secs_total % 3600) % 60
-    url1 = "http://" + config["Oppo_IP"] + ":436/setplaytime?"
-    url = ""
-    url = url + '{"h":' + str(int(h)) + ","
-    url = url + '"m":' + str(int(m)) + ","
-    url = url + '"s":' + str(int(s)) + "}"
-    headers = {}
-    url = url1 + url
-    logging.debug(url)
-    response = requests.get(url, headers=headers)
-    logging.debug("*** setplaytime Response: %s", response.text)
-    return response.text
+    response_text = oppo_control_api_client(config).set_play_time(playticks)
+    logging.debug("*** setplaytime Response: %s", response_text)
+    return response_text
 
 
 def setaudiotrack(config, audio_index):
     logging.debug("setaudiotrack")
-    url = (
-        "http://"
-        + config["Oppo_IP"]
-        + ':436/setaudiomenulist?{"cur_index":'
-        + str(int(audio_index))
-        + "}"
-    )
-    headers = {}
-    logging.debug(url)
-    response = requests.get(url, headers=headers)
-    logging.debug("*** setaudiotrack Response: %s", response.text)
-    return response.text
+    response_text = oppo_control_api_client(config).select_audio_track(audio_index)
+    logging.debug("*** setaudiotrack Response: %s", response_text)
+    return response_text
 
 
-def apply_selected_subtitle_track(emby_session, params, startup_timer=None):
+def apply_selected_subtitle_track(
+    emby_session,
+    params,
+    startup_timer=None,
+    startup_orchestrator=None,
+):
     logging.debug("apply_selected_subtitle_track")
     try:
         subtitle_stream_index = params.get("subtitle_stream_index")
@@ -529,13 +512,19 @@ def apply_selected_subtitle_track(emby_session, params, startup_timer=None):
             if subs_index is not None and int(subs_index) >= 0:
                 if startup_timer is not None:
                     with startup_timer.measure_step("subtitle_set_oppo_track"):
-                        set_subtitles_track(
-                            emby_session.config,
-                            subs_index,
-                            startup_timer=startup_timer,
-                        )
+                        if startup_orchestrator is None:
+                            set_subtitles_track(
+                                emby_session.config,
+                                subs_index,
+                                startup_timer=startup_timer,
+                            )
+                        else:
+                            startup_orchestrator.select_oppo_subtitle_track(subs_index)
                 else:
-                    set_subtitles_track(emby_session.config, subs_index)
+                    if startup_orchestrator is None:
+                        set_subtitles_track(emby_session.config, subs_index)
+                    else:
+                        startup_orchestrator.select_oppo_subtitle_track(subs_index)
 
             elif emby_session.config["DebugLevel"] > 0:
                 print("No valid OPPO subtitle index found")
@@ -563,37 +552,28 @@ def set_subtitles_track(config, subs_index, startup_timer=None):
     if config["DebugLevel"] > 0:
         print(actual_track)
 
-    url = (
-        "http://"
-        + config["Oppo_IP"]
-        + ':436/setsubttmenulist?{"cur_index":'
-        + str(int(subs_index))
-        + "}"
-    )
-    headers = {}
-    logging.debug(url)
-
+    client = oppo_control_api_client(config)
     timeout = 0
 
     if startup_timer is not None:
         with startup_timer.measure_step("subtitle_set_and_confirm_oppo_track"):
             while actual_track != subs_index and timeout < 10:
-                response = requests.get(url, headers=headers)
-                logging.debug("*** set_subtitles_track Response: %s", response.text)
+                response_text = client.select_subtitle_track(subs_index)
+                logging.debug("*** set_subtitles_track Response: %s", response_text)
 
                 if config["DebugLevel"] == 2:
-                    print(response.text)
+                    print(response_text)
 
                 time.sleep(1)
                 actual_track = get_current_subtitle_track(config)
                 timeout = timeout + 1
     else:
         while actual_track != subs_index and timeout < 10:
-            response = requests.get(url, headers=headers)
-            logging.debug("*** set_subtitles_track Response: %s", response.text)
+            response_text = client.select_subtitle_track(subs_index)
+            logging.debug("*** set_subtitles_track Response: %s", response_text)
 
             if config["DebugLevel"] == 2:
-                print(response.text)
+                print(response_text)
 
             time.sleep(1)
             actual_track = get_current_subtitle_track(config)
@@ -604,12 +584,9 @@ def set_subtitles_track(config, subs_index, startup_timer=None):
 
 def get_current_subtitle_track(config):
     logging.debug("get_current_subtitle_track")
-    url = "http://" + config["Oppo_IP"] + ":436/getsubtitlemenulist?"
-    headers = {}
-    logging.debug(url)
-    response = requests.get(url, headers=headers)
-    logging.debug("*** getsubtitlemenulist Response: %s", response.text)
-    response_subs = json.loads(response.text)
+    response_text = oppo_control_api_client(config).get_subtitle_menu()
+    logging.debug("*** getsubtitlemenulist Response: %s", response_text)
+    response_subs = json.loads(response_text)
     try:
         for subs in response_subs["subtitle_list"]:
             if subs["selected"] == True:
@@ -1123,201 +1100,189 @@ def playto_file(EmbySession, data, scripterx=False):
                     params["ControllingUserId"], error_message, 5000
                 )
         else:
-                    with startup_timer.measure_step("notify_emby_playback_started"):
-                        EmbySession.playstate = "Playing"
-                        EmbySession.playnow(data)
+            with startup_timer.measure_step("notify_emby_playback_started"):
+                EmbySession.playstate = "Playing"
+                EmbySession.playnow(data)
 
-                    if EmbySession.config["DebugLevel"] > 0:
-                        print(params["auto_resume"])
+            if EmbySession.config["DebugLevel"] > 0:
+                print(params["auto_resume"])
 
-                    with startup_timer.measure_step("apply_resume_position"):
-                        if params["auto_resume"] <= 0:
-                            playticks = 0
-                        else:
-                            playticks = params["auto_resume"]
+            with startup_timer.measure_step("apply_resume_position"):
+                if params["auto_resume"] <= 0:
+                    playticks = 0
+                else:
+                    playticks = params["auto_resume"]
 
-                        setplaytime(EmbySession.config, playticks)
+                startup_orchestrator.seek_oppo_to(playticks)
 
-                        if EmbySession.config["DebugLevel"] > 0:
-                            print("Se restablece la reproduccion en " + str(playticks))
+                if EmbySession.config["DebugLevel"] > 0:
+                    print("Se restablece la reproduccion en " + str(playticks))
 
-                    with startup_timer.measure_step("apply_audio_track"):
-                        try:
-                            if params["audio_stream_index"]:
-                                audio_index = EmbySession.get_xnoppo_audio_index(
-                                    params["ControllingUserId"],
-                                    params["item_id"],
-                                    params["audio_stream_index"],
-                                )
-                                setaudiotrack(EmbySession.config, audio_index)
-                        except:
-                            pass
-
-                    if EmbySession.config["TV"] != True:
-                        if scripterx == True:
-                            EmbySession.send_message2(
-                                params["Session_id"],
-                                EmbySession.lang["x_msg_init_play"] + movie,
-                            )
-                        logging.info("Reprodución iniciada: %s", movie)
-
-                    with startup_timer.measure_step(
-                        "initial_global_info_before_progress_loop"
-                    ):
-                        response_data_gb = getglobalinfo(EmbySession.config)
-                        log_oppo_qpl_state(
-                            EmbySession.config,
-                            "before_getglobalinfo_loop",
-                            changes_only=True,
+            with startup_timer.measure_step("apply_audio_track"):
+                try:
+                    if params["audio_stream_index"]:
+                        audio_index = EmbySession.get_xnoppo_audio_index(
+                            params["ControllingUserId"],
+                            params["item_id"],
+                            params["audio_stream_index"],
                         )
-                    cur_time = 0
-                    total_time = 0
-                    playingtime = {}
-                    playingtime["total_time"] = total_time
-                    playingtime["cur_time"] = cur_time
+                        startup_orchestrator.select_oppo_audio_track(audio_index)
+                except:
+                    pass
 
-                    positionticks = 0
-                    totalticks = 0
-                    last_valid_positionticks = 0
-                    last_valid_totalticks = 0
-                    last_valid_cur_time = 0
-                    last_valid_total_time = 0
-                    ispaused = False
-                    ismuted = False
-                    with startup_timer.measure_step("apply_subtitle_track"):
-                        apply_selected_subtitle_track(
-                            EmbySession, params, startup_timer=startup_timer
-                        )
-                    startup_timer.log_summary()
-
-                    while response_data_gb.find('"is_video_playing":true') > 0:
-                        time.sleep(1)
-                        if EmbySession.playstate != "Replay":
-                            response_data_gb = getglobalinfo(EmbySession.config)
-                            log_oppo_qpl_state(
-                                EmbySession.config,
-                                "before_getglobalinfo_loop",
-                                changes_only=True,
-                            )
-                            if response_data_gb.find('"is_video_playing":true') > 0:
-                                response_playing_time = getplayingtime(
-                                    EmbySession.config
-                                )
-                                playingtime = json.loads(response_playing_time)
-                        if response_data_gb.find('"is_video_playing":true') > 0:
-                            if EmbySession.config["DebugLevel"] > 0:
-                                print(
-                                    "PlayingTime: "
-                                    + str(playingtime["cur_time"])
-                                    + " de "
-                                    + str(playingtime["total_time"])
-                                )
-                            logging.debug(
-                                "PlayingTime: %s de %s",
-                                str(playingtime["cur_time"]),
-                                str(playingtime["total_time"]),
-                            )
-                            if (
-                                playingtime["cur_time"] > 0
-                                and playingtime["total_time"] > 0
-                            ):
-                                positionticks = playingtime["cur_time"] * 10000000
-                                total_time = playingtime["total_time"]
-                                totalticks = total_time * 10000000
-
-                                last_valid_positionticks = positionticks
-                                last_valid_totalticks = totalticks
-                                last_valid_cur_time = playingtime["cur_time"]
-                                last_valid_total_time = total_time
-
-                            if scripterx == False:
-                                EmbySession.playingprogress(
-                                    EmbySession.currentdata,
-                                    positionticks,
-                                    totalticks,
-                                    ispaused,
-                                    ismuted,
-                                )
-                                EmbySession.setitemplaybackposition(
-                                    EmbySession.currentdata, positionticks, False
-                                )
-
-                    if playingtime["cur_time"] <= 0 and last_valid_positionticks > 0:
-                        if EmbySession.config["DebugLevel"] > 0:
-                            print(
-                                "Ignoring zero PlayingTime after stop. "
-                                + "Using last valid position: "
-                                + str(last_valid_cur_time)
-                                + " de "
-                                + str(last_valid_total_time)
-                            )
-                        logging.info(
-                            "Ignoring zero PlayingTime after stop. Using last valid position: %s de %s",
-                            str(last_valid_cur_time),
-                            str(last_valid_total_time),
-                        )
-
-                        positionticks = last_valid_positionticks
-                        totalticks = last_valid_totalticks
-                        total_time = last_valid_total_time
-                        playingtime["cur_time"] = last_valid_cur_time
-                        playingtime["total_time"] = last_valid_total_time
-
-                    logging.info(
-                        "-----------------------------------------------------------"
+            if EmbySession.config["TV"] != True:
+                if scripterx == True:
+                    EmbySession.send_message2(
+                        params["Session_id"],
+                        EmbySession.lang["x_msg_init_play"] + movie,
                     )
-                    logging.debug("getglobalinfo: %s", response_data_gb)
+                logging.info("Reprodución iniciada: %s", movie)
+
+            with startup_timer.measure_step("initial_global_info_before_progress_loop"):
+                response_data_gb = getglobalinfo(EmbySession.config)
+                log_oppo_qpl_state(
+                    EmbySession.config,
+                    "before_getglobalinfo_loop",
+                    changes_only=True,
+                )
+            cur_time = 0
+            total_time = 0
+            playingtime = {}
+            playingtime["total_time"] = total_time
+            playingtime["cur_time"] = cur_time
+
+            positionticks = playticks
+            totalticks = 0
+            last_valid_positionticks = playticks
+            last_valid_totalticks = 0
+            last_valid_cur_time = int(playticks / 10_000_000)
+            last_valid_total_time = 0
+            ispaused = False
+            ismuted = False
+            with startup_timer.measure_step("apply_subtitle_track"):
+                apply_selected_subtitle_track(
+                    EmbySession,
+                    params,
+                    startup_timer=startup_timer,
+                    startup_orchestrator=startup_orchestrator,
+                )
+            startup_timer.log_summary()
+
+            while response_data_gb.find('"is_video_playing":true') > 0:
+                time.sleep(1)
+                if EmbySession.playstate != "Replay":
+                    response_data_gb = getglobalinfo(EmbySession.config)
+                    log_oppo_qpl_state(
+                        EmbySession.config,
+                        "before_getglobalinfo_loop",
+                        changes_only=True,
+                    )
+                    if response_data_gb.find('"is_video_playing":true') > 0:
+                        playback_position = (
+                            startup_orchestrator.get_oppo_playback_position()
+                        )
+                        playingtime = {
+                            "cur_time": playback_position.current_seconds,
+                            "total_time": playback_position.total_seconds,
+                        }
+                if response_data_gb.find('"is_video_playing":true') > 0:
+                    if EmbySession.config["DebugLevel"] > 0:
+                        print(
+                            "PlayingTime: "
+                            + str(playingtime["cur_time"])
+                            + " de "
+                            + str(playingtime["total_time"])
+                        )
                     logging.debug(
                         "PlayingTime: %s de %s",
                         str(playingtime["cur_time"]),
-                        str(total_time),
+                        str(playingtime["total_time"]),
                     )
-                    if EmbySession.config["DebugLevel"] > 0:
-                        print(
-                            "PlayingTime Final: "
-                            + str(playingtime["cur_time"])
-                            + " de "
-                            + str(total_time)
-                        )
-                    log_oppo_qpl_state(EmbySession.config, "after_getglobalinfo_loop")
+                    if playingtime["cur_time"] > 0 and playingtime["total_time"] > 0:
+                        positionticks = playingtime["cur_time"] * 10000000
+                        total_time = playingtime["total_time"]
+                        totalticks = total_time * 10000000
 
-                    EmbySession.playingstopped(
-                        EmbySession.currentdata, positionticks, ispaused, ismuted
+                        last_valid_positionticks = positionticks
+                        last_valid_totalticks = totalticks
+                        last_valid_cur_time = playingtime["cur_time"]
+                        last_valid_total_time = total_time
+
+                    if scripterx == False:
+                        EmbySession.playingprogress(
+                            EmbySession.currentdata,
+                            positionticks,
+                            totalticks,
+                            ispaused,
+                            ismuted,
+                        )
+                        EmbySession.setitemplaybackposition(
+                            EmbySession.currentdata, positionticks, False
+                        )
+
+            if playingtime["cur_time"] <= 0 and last_valid_positionticks > 0:
+                if EmbySession.config["DebugLevel"] > 0:
+                    print(
+                        "Ignoring zero PlayingTime after stop. "
+                        + "Using last valid position: "
+                        + str(last_valid_cur_time)
+                        + " de "
+                        + str(last_valid_total_time)
                     )
-                    played = False
-                    if totalticks > 0:
-                        if (positionticks / totalticks) > 0.95:
-                            played = True
-                    EmbySession.setitemplaybackposition(
-                        EmbySession.currentdata, positionticks, played
-                    )
-                    log_oppo_qpl_state(
-                        EmbySession.config,
-                        "before_return_to_tv",
-                        changes_only=False,
-                    )
-                    if EmbySession.config["TV"] == True:
-                        if EmbySession.config["DebugLevel"] > 0:
-                            print("Cambiamos a la app anterior en la TV")
-                        logging.info("Cambiamos a la app anterior en la TV")
-                        try:
-                            result = tv_set_prev(EmbySession.config)
-                            if EmbySession.config["DebugLevel"] > 0:
-                                print(result)
-                            logging.info("Resultado: %s", str(result))
-                        except:
-                            pass
-        mounted_path = oppo_playback_start_result.mounted_path
-        if EmbySession.config["Autoscript"] and mounted_path is not None:
-            result = unmount_oppo_path(
-                host=EmbySession.config["Oppo_IP"],
-                port=EmbySession.config.get("OPPO_Port", 23),
-                mount_path=mounted_path,
-                debug=EmbySession.config["DebugLevel"] > 0,
-                timeout=EmbySession.config["timeout_oppo_mount"],
+                logging.info(
+                    "Ignoring zero PlayingTime after stop. Using last valid position: %s de %s",
+                    str(last_valid_cur_time),
+                    str(last_valid_total_time),
+                )
+
+                positionticks = last_valid_positionticks
+                totalticks = last_valid_totalticks
+                total_time = last_valid_total_time
+                playingtime["cur_time"] = last_valid_cur_time
+                playingtime["total_time"] = last_valid_total_time
+
+            logging.info("-----------------------------------------------------------")
+            logging.debug("getglobalinfo: %s", response_data_gb)
+            logging.debug(
+                "PlayingTime: %s de %s",
+                str(playingtime["cur_time"]),
+                str(total_time),
             )
             if EmbySession.config["DebugLevel"] > 0:
-                print(f"Unmount result: {result}")
+                print(
+                    "PlayingTime Final: "
+                    + str(playingtime["cur_time"])
+                    + " de "
+                    + str(total_time)
+                )
+            log_oppo_qpl_state(EmbySession.config, "after_getglobalinfo_loop")
+
+            EmbySession.playingstopped(
+                EmbySession.currentdata, positionticks, ispaused, ismuted
+            )
+            played = False
+            if totalticks > 0:
+                if (positionticks / totalticks) > 0.95:
+                    played = True
+            EmbySession.setitemplaybackposition(
+                EmbySession.currentdata, positionticks, played
+            )
+            log_oppo_qpl_state(
+                EmbySession.config,
+                "before_return_to_tv",
+                changes_only=False,
+            )
+            if EmbySession.config["TV"] == True:
+                if EmbySession.config["DebugLevel"] > 0:
+                    print("Cambiamos a la app anterior en la TV")
+                logging.info("Cambiamos a la app anterior en la TV")
+                try:
+                    result = tv_set_prev(EmbySession.config)
+                    if EmbySession.config["DebugLevel"] > 0:
+                        print(result)
+                    logging.info("Resultado: %s", str(result))
+                except:
+                    pass
         if (
             EmbySession.config["AV"] == True
             and EmbySession.config["AV_Always_ON"] == False

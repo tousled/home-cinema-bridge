@@ -159,16 +159,16 @@ class LegacyOppoMediaControlPlaybackOutput(OppoPlaybackPort):
         )
 
     def get_playback_position(self) -> OppoPlaybackPosition:
-        raise NotImplementedError
+        return self._playback.get_playback_position()
 
     def seek_to(self, position_ticks: int) -> DeviceCommandResult:
-        raise NotImplementedError
+        return self._playback.seek_to(position_ticks)
 
     def select_audio_track(self, audio_index: int) -> DeviceCommandResult:
-        raise NotImplementedError
+        return self._playback.select_audio_track(audio_index)
 
     def select_subtitle_track(self, subtitle_index: int) -> DeviceCommandResult:
-        raise NotImplementedError
+        return self._playback.select_subtitle_track(subtitle_index)
 
     def stop_playback(self) -> DeviceCommandResult:
         raise NotImplementedError

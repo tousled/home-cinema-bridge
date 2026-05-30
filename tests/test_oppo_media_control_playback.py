@@ -77,6 +77,26 @@ class RecordingMediaControlClient:
         self.calls.append(("send_remote_key", key))
         return "{}"
 
+    def get_playing_time(self):
+        self.calls.append("get_playing_time")
+        return '{"cur_time":12,"total_time":120}'
+
+    def set_play_time(self, position_ticks):
+        self.calls.append(("set_play_time", position_ticks))
+        return '{"success":false,"msg":""}'
+
+    def select_audio_track(self, audio_index):
+        self.calls.append(("select_audio_track", audio_index))
+        return '{"success":false,"msg":""}'
+
+    def get_subtitle_menu(self):
+        self.calls.append("get_subtitle_menu")
+        return '{"subtitle_list":[{"index":1,"selected":true}]}'
+
+    def select_subtitle_track(self, subtitle_index):
+        self.calls.append(("select_subtitle_track", subtitle_index))
+        return '{"success":true,"msg":""}'
+
 
 class OppoMediaControlPlaybackTest(unittest.TestCase):
     def test_starts_nfs_playback_without_legacy_refresh_or_remote_key(self):
@@ -153,6 +173,66 @@ class OppoMediaControlPlaybackTest(unittest.TestCase):
             ],
             client.calls,
         )
+
+    def test_reads_playback_position_from_media_control_endpoint(self):
+        client = RecordingMediaControlClient()
+        playback = OppoMediaControlPlayback(
+            {
+                "default_nfs": True,
+                "timeout_oppo_mount": 30,
+                "timeout_oppo_playitem": 30,
+            },
+            client=client,
+            playback_state_waiter=_started_playback,
+        )
+
+        position = playback.get_playback_position()
+
+        self.assertEqual(12, position.current_seconds)
+        self.assertEqual(120, position.total_seconds)
+        self.assertEqual(["get_playing_time"], client.calls)
+
+    def test_sends_seek_and_audio_selection_through_media_control_client(self):
+        client = RecordingMediaControlClient()
+        playback = OppoMediaControlPlayback(
+            {
+                "default_nfs": True,
+                "timeout_oppo_mount": 30,
+                "timeout_oppo_playitem": 30,
+            },
+            client=client,
+            playback_state_waiter=_started_playback,
+        )
+
+        seek_result = playback.seek_to(120_000_000)
+        audio_result = playback.select_audio_track(2)
+
+        self.assertTrue(seek_result.successful)
+        self.assertTrue(audio_result.successful)
+        self.assertEqual(
+            [
+                ("set_play_time", 120_000_000),
+                ("select_audio_track", 2),
+            ],
+            client.calls,
+        )
+
+    def test_skips_subtitle_selection_when_requested_track_is_already_selected(self):
+        client = RecordingMediaControlClient()
+        playback = OppoMediaControlPlayback(
+            {
+                "default_nfs": True,
+                "timeout_oppo_mount": 30,
+                "timeout_oppo_playitem": 30,
+            },
+            client=client,
+            playback_state_waiter=_started_playback,
+        )
+
+        result = playback.select_subtitle_track(1)
+
+        self.assertTrue(result.successful)
+        self.assertEqual(["get_subtitle_menu"], client.calls)
 
 
 def _started_playback(**kwargs):

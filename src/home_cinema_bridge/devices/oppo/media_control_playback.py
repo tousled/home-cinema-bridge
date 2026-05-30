@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
 from home_cinema_bridge.playback.startup.models import (
+    DeviceCommandResult,
+    OppoPlaybackPosition,
     OppoPlaybackStartRequest,
     OppoPlaybackStartResult,
     OppoPlaybackState,
@@ -147,6 +150,73 @@ class OppoMediaControlPlayback:
                 ),
             )
 
+    def get_playback_position(self) -> OppoPlaybackPosition:
+        response_text = self._client.get_playing_time()
+        response = json.loads(response_text)
+
+        return OppoPlaybackPosition(
+            current_seconds=int(response.get("cur_time", 0)),
+            total_seconds=int(response.get("total_time", 0)),
+            raw_response=response_text,
+        )
+
+    def seek_to(self, position_ticks: int) -> DeviceCommandResult:
+        try:
+            response_text = self._client.set_play_time(position_ticks)
+            return _command_sent_result("set OPPO playback time", response_text)
+        except Exception as exc:
+            logger.exception("OPPO seek failed.")
+            return DeviceCommandResult.failed(
+                f"OPPO seek failed: {type(exc).__name__}: {exc}"
+            )
+
+    def select_audio_track(self, audio_index: int) -> DeviceCommandResult:
+        try:
+            response_text = self._client.select_audio_track(audio_index)
+            return _command_sent_result("select OPPO audio track", response_text)
+        except Exception as exc:
+            logger.exception("OPPO audio track selection failed.")
+            return DeviceCommandResult.failed(
+                f"OPPO audio track selection failed: {type(exc).__name__}: {exc}"
+            )
+
+    def select_subtitle_track(self, subtitle_index: int) -> DeviceCommandResult:
+        try:
+            current_track = self.get_current_subtitle_track()
+            attempts = 0
+            response_text = ""
+
+            while current_track != subtitle_index and attempts < 10:
+                response_text = self._client.select_subtitle_track(subtitle_index)
+                time.sleep(1)
+                current_track = self.get_current_subtitle_track()
+                attempts += 1
+
+            if current_track == subtitle_index:
+                return DeviceCommandResult.success(
+                    f"OPPO subtitle track selected: {subtitle_index}"
+                )
+
+            return _command_sent_result(
+                "select OPPO subtitle track",
+                response_text,
+            )
+        except Exception as exc:
+            logger.exception("OPPO subtitle track selection failed.")
+            return DeviceCommandResult.failed(
+                f"OPPO subtitle track selection failed: {type(exc).__name__}: {exc}"
+            )
+
+    def get_current_subtitle_track(self) -> int:
+        response_text = self._client.get_subtitle_menu()
+        response = json.loads(response_text)
+
+        for subtitle in response.get("subtitle_list", []):
+            if subtitle.get("selected") is True:
+                return int(subtitle.get("index", 0))
+
+        return 0
+
     def _resolve_network_protocol(
         self,
         *,
@@ -215,3 +285,18 @@ def _response_error_message(response: dict[str, Any]) -> str:
         return message
 
     return "No hay mas info"
+
+
+def _command_sent_result(operation: str, response_text: str) -> DeviceCommandResult:
+    try:
+        response = json.loads(response_text)
+    except json.JSONDecodeError:
+        return DeviceCommandResult.success(f"{operation} response: {response_text}")
+
+    if response.get("success") is False:
+        message = response.get("msg") or response.get("retInfo") or response_text
+        return DeviceCommandResult.success(
+            f"{operation} command sent; OPPO returned success=false: {message}"
+        )
+
+    return DeviceCommandResult.success(f"{operation} response: {response_text}")

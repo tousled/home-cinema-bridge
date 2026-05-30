@@ -8,6 +8,8 @@ from home_cinema_bridge.playback.startup.models import (
     DeviceCommandResult,
     PlaybackOutputSwitchRequest,
     PlaybackOutputSwitchResult,
+    OppoPlaybackPosition,
+    OppoPlaybackState,
     OppoPlaybackStartRequest,
     OppoPlaybackStartResult,
 )
@@ -87,6 +89,21 @@ class PlaybackStartupOrchestrator:
             request,
             on_waiting=on_waiting,
         )
+
+    def get_oppo_playback_position(self) -> OppoPlaybackPosition:
+        return self._oppo_playback.get_playback_position()
+
+    def get_oppo_playback_state(self) -> OppoPlaybackState:
+        return self._oppo_playback.get_playback_state()
+
+    def seek_oppo_to(self, position_ticks: int) -> DeviceCommandResult:
+        return self._oppo_playback.seek_to(position_ticks)
+
+    def select_oppo_audio_track(self, audio_index: int) -> DeviceCommandResult:
+        return self._oppo_playback.select_audio_track(audio_index)
+
+    def select_oppo_subtitle_track(self, subtitle_index: int) -> DeviceCommandResult:
+        return self._oppo_playback.select_subtitle_track(subtitle_index)
 
     def _get_current_tv_app_id(self) -> str | None:
         try:
