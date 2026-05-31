@@ -3,6 +3,7 @@ from home_cinema_bridge.media_servers.emby.playback import (
     MediaServerPlaybackContext,
     MediaServerPlaybackEventPublisher,
     MediaServerPlaybackProgressReporter,
+    MediaServerPlaybackStoppedReporter,
 )
 
 __all__ = [
@@ -10,4 +11,5 @@ __all__ = [
     "MediaServerPlaybackContext",
     "MediaServerPlaybackEventPublisher",
     "MediaServerPlaybackProgressReporter",
+    "MediaServerPlaybackStoppedReporter",
 ]

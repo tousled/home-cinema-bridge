@@ -4,6 +4,7 @@ from home_cinema_bridge.media_servers.emby.playback import (
     MediaServerPlaybackContext,
     MediaServerPlaybackEventPublisher,
     MediaServerPlaybackProgressReporter,
+    MediaServerPlaybackStoppedReporter,
 )
 
 
@@ -156,6 +157,22 @@ class MediaServerPlaybackEventPublisherTest(unittest.TestCase):
 
         payload = client.calls[0][1]
         self.assertEqual(120_000_000, payload["PositionTicks"])
+        self.assertEqual(1_200_000_000, payload["RunTimeTicks"])
+
+    def test_stop_reporter_adapts_domain_seconds_to_emby_ticks(self):
+        client = RecordingEmbyClient()
+        publisher = MediaServerPlaybackEventPublisher(
+            client,
+            bridge_session_id="bridge-session",
+            context=_context(),
+        )
+        reporter = MediaServerPlaybackStoppedReporter(publisher)
+
+        reporter.stopped(position_seconds=66, duration_seconds=120)
+
+        self.assertEqual("stopped", client.calls[0][0])
+        payload = client.calls[0][1]
+        self.assertEqual(660_000_000, payload["PositionTicks"])
         self.assertEqual(1_200_000_000, payload["RunTimeTicks"])
 
 

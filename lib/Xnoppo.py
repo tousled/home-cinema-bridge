@@ -18,6 +18,10 @@ from home_cinema_bridge.playback.during import (
 from home_cinema_bridge.playback.error_handling import (
     create_playback_error_handler,
 )
+from home_cinema_bridge.playback.finish import PlaybackFinishRequest
+from home_cinema_bridge.playback.finish.factory import (
+    create_finish_playback_orchestrator,
+)
 from home_cinema_bridge.playback.orchestrator import (
     PlaybackOrchestrationRequest,
     PlaybackOrchestrator,
@@ -55,9 +59,7 @@ from home_cinema_bridge.playback.timing import PlaybackStartupTimer
 
 from .Xnoppo_AVR import (
     av_power_off,
-    av_restore_tv_audio,
 )
-from .Xnoppo_TV import tv_set_prev
 
 _qpl_last_observed_states = {}
 MEDIA_SERVER_TICKS_PER_SECOND = 10_000_000
@@ -69,10 +71,6 @@ def reset_qpl_observation_state():
 
 def media_server_ticks_to_seconds(position_ticks):
     return int(position_ticks / MEDIA_SERVER_TICKS_PER_SECOND)
-
-
-def seconds_to_media_server_ticks(position_seconds):
-    return position_seconds * MEDIA_SERVER_TICKS_PER_SECOND
 
 
 def log_oppo_qpl_state(config, label, changes_only=False):
@@ -1113,15 +1111,33 @@ def playto_file(EmbySession, data, scripterx=False):
                 is_muted=ismuted,
             )
 
+        def build_finish_request(playback_monitoring_result):
+            return PlaybackFinishRequest(
+                position_seconds=playback_monitoring_result.position_seconds,
+                duration_seconds=playback_monitoring_result.duration_seconds,
+                final_player_state=playback_monitoring_result.final_state,
+                previous_tv_app_id=output_switch_result.previous_tv_app_id,
+                tv_enabled=EmbySession.config.get("TV") is True,
+                av_enabled=EmbySession.config.get("AV") is True,
+                is_paused=ispaused,
+                is_muted=ismuted,
+            )
+
         during_playback_orchestrator = PlaybackDuringPlaybackOrchestrator(
             oppo_playback=startup_wiring.oppo_playback,
             progress_reporter=MediaServerPlaybackProgressReporter(
                 media_server_playback_event_publisher
             ),
         )
+        finish_playback_orchestrator = create_finish_playback_orchestrator(
+            EmbySession.config,
+            media_server_playback_event_publisher,
+            oppo_playback=startup_wiring.oppo_playback,
+        )
         playback_orchestrator = PlaybackOrchestrator(
             startup_orchestrator=startup_orchestrator,
             during_playback_orchestrator=during_playback_orchestrator,
+            finish_playback_orchestrator=finish_playback_orchestrator,
             error_handler=create_playback_error_handler(EmbySession.config),
         )
         playback_orchestration_result = playback_orchestrator.play_until_stopped(
@@ -1135,12 +1151,13 @@ def playto_file(EmbySession, data, scripterx=False):
                     EmbySession.config, "after_playnormalfile"
                 ),
                 build_monitoring_request=build_monitoring_request,
+                build_finish_request=build_finish_request,
             )
         )
 
         oppo_playback_start_result = playback_orchestration_result.startup_result
 
-        if not playback_orchestration_result.successful:
+        if not oppo_playback_start_result.successful:
             if not oppo_playback_start_result.media_mounted:
                 error_message = (
                     EmbySession.lang["x_msg_error_mount"]
@@ -1167,15 +1184,18 @@ def playto_file(EmbySession, data, scripterx=False):
                 EmbySession.send_user_message(
                     params["ControllingUserId"], error_message, 5000
                 )
+        elif not playback_orchestration_result.successful:
+            finish_result = playback_orchestration_result.finish_result
+            recovery_result = playback_orchestration_result.error_recovery_result
+            logging.warning(
+                "Playback orchestration ended with non-startup failure | "
+                "finish_successful=%s | recovery_successful=%s",
+                finish_result.successful if finish_result is not None else None,
+                recovery_result.successful if recovery_result is not None else None,
+            )
         else:
             playback_monitoring_result = playback_orchestration_result.monitoring_result
-
-            positionticks = seconds_to_media_server_ticks(
-                playback_monitoring_result.position_seconds
-            )
-            totalticks = seconds_to_media_server_ticks(
-                playback_monitoring_result.duration_seconds
-            )
+            finish_result = playback_orchestration_result.finish_result
 
             logging.info("-----------------------------------------------------------")
             logging.debug(
@@ -1192,47 +1212,21 @@ def playto_file(EmbySession, data, scripterx=False):
                 )
             logging.info(
                 "OPPO playback monitoring stopped | final_state=%s | category=%s | "
-                "position_ticks=%s | runtime_ticks=%s",
+                "position_seconds=%s | duration_seconds=%s",
                 playback_monitoring_result.final_state.status.value,
                 playback_monitoring_result.final_state.category.value,
-                positionticks,
-                totalticks,
-            )
-
-            media_server_playback_event_publisher.stopped(
-                position_ticks=positionticks,
-                runtime_ticks=totalticks,
-                is_paused=ispaused,
-                is_muted=ismuted,
+                playback_monitoring_result.position_seconds,
+                playback_monitoring_result.duration_seconds,
             )
             logging.info(
-                "Emby playback stopped | position_ticks=%s | runtime_ticks=%s | played=%s",
-                positionticks,
-                totalticks,
-                playback_monitoring_result.played,
+                "Playback finish result | successful=%s | tv=%s | av_audio=%s | "
+                "final_state=%s | category=%s",
+                finish_result.successful,
+                finish_result.tv_app_result.status.value,
+                finish_result.av_audio_result.status.value,
+                finish_result.final_player_state.status.value,
+                finish_result.final_player_state.category.value,
             )
-            log_oppo_qpl_state(
-                EmbySession.config,
-                "before_return_to_tv",
-                changes_only=False,
-            )
-            if EmbySession.config["TV"] == True:
-                if EmbySession.config["DebugLevel"] > 0:
-                    print("Cambiamos a la app anterior en la TV")
-                logging.info("Cambiamos a la app anterior en la TV")
-                try:
-                    result = tv_set_prev(EmbySession.config)
-                    if EmbySession.config["DebugLevel"] > 0:
-                        print(result)
-                    logging.info("Resultado: %s", str(result))
-                except Exception:
-                    logging.exception("Unable to return LG TV to previous app")
-            if EmbySession.config["AV"] == True:
-                try:
-                    result = av_restore_tv_audio(EmbySession.config)
-                    logging.info("AV receiver TV audio restore result: %s", str(result))
-                except Exception:
-                    logging.exception("Unable to restore AV receiver to TV audio")
         if (
             EmbySession.config["AV"] == True
             and EmbySession.config["AV_Always_ON"] == False

@@ -21,6 +21,15 @@ import json
 import time
 from .Emby_http import EmbyHttp
 from .Xnoppo import *
+from home_cinema_bridge.media_servers.emby.session_events import (
+    is_same_media_item_request,
+    playback_request_media_item_id,
+)
+
+
+def _bridge_playback_is_active(playstate):
+    return playstate in ("Loading", "Playing", "Replay")
+
 
 class XnoppoWs(threading.Thread):
     emby_state=''
@@ -108,10 +117,10 @@ class XnoppoWs(threading.Thread):
             if self.EmbySession.playstate=="Loading" or self.EmbySession.playstate=="Replay":
                 if self.ws_config["DebugLevel"]>0: print("Esta en la pantalla de Loading, tenemos que esperar")
                 timeout=60
-                time=0
-                while self.EmbySession.playstate=="Loading" or time>timeout:
+                elapsed=0
+                while self.EmbySession.playstate=="Loading" and elapsed<timeout:
                     time.sleep(3)
-                    time=time+3
+                    elapsed=elapsed+3
             if self.EmbySession.playstate=="Playing":
                 if self.ws_config["DebugLevel"]>0: print("ya se esta reproduciendo algo")
                 playother(self.EmbySession,data,False)
@@ -273,9 +282,24 @@ class XnoppoWs(threading.Thread):
                                     f"subtitle={data2['SubtitleStreamIndex']}"
                                 )
 
+                            if (
+                                _bridge_playback_is_active(self.EmbySession.playstate)
+                                and is_same_media_item_request(
+                                    self.EmbySession.currentdata,
+                                    data2,
+                                )
+                            ):
+                                logging.info(
+                                    "Ignoring duplicate monitored playback event | "
+                                    "item_id=%s | playstate=%s",
+                                    playback_request_media_item_id(data2),
+                                    self.EmbySession.playstate,
+                                )
+                                return 0
+
                             timeout = 60
                             elapsed = 0
-                            while self.EmbySession.playstate == "Loading" or elapsed > timeout:
+                            while self.EmbySession.playstate == "Loading" and elapsed < timeout:
                                 time.sleep(3)
                                 elapsed = elapsed + 3
 
@@ -321,6 +345,15 @@ class XnoppoWs(threading.Thread):
 
             except:
                 if self.MonitoredState != '':
+                    if _bridge_playback_is_active(self.EmbySession.playstate):
+                        logging.info(
+                            "Keeping monitored state during bridge playback | "
+                            "monitored_state=%s | playstate=%s",
+                            self.MonitoredState,
+                            self.EmbySession.playstate,
+                        )
+                        return 0
+
                     if self.ws_config["DebugLevel"] > 0:
                         print('Stopped Playing')
                     if self.ws_config["DebugLevel"] > 0 and item_data:
