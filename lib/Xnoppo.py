@@ -616,28 +616,6 @@ def sendremotekey(key, config):
     return response.text
 
 
-def parse_oppo_path(movie):
-    word = "/"
-    inicio = movie.find(word)
-    inicio = inicio + 1
-    final = movie.find(word, inicio, len(movie))
-    servidor = movie[inicio:final]
-
-    ultimo = final + 1
-    result = final + 1
-    while result > 0:
-        ultimo = result + 1
-        result = movie.find(word, ultimo, len(movie))
-
-    fichero = movie[ultimo : len(movie)]
-
-    final = final + 1
-    ultimo = ultimo - 1
-    carpeta = movie[final:ultimo]
-
-    return servidor, carpeta, fichero
-
-
 def resolve_server_is_nfs(config, device_list, server_name):
     nfs = config["default_nfs"]
 
@@ -646,22 +624,6 @@ def resolve_server_is_nfs(config, device_list, server_name):
             return device["sub_type"] == "nfs"
 
     return nfs
-
-
-def resolve_oppo_movie_path(movie, config):
-    logging.info("Ruta antes de los reemplazos por server: %s", movie)
-
-    for server in config["servers"]:
-        logging.info("Sustituimos %s por %s", server["Emby_Path"], server["Oppo_Path"])
-        movie = movie.replace(server["Emby_Path"], server["Oppo_Path"])
-        logging.info("Resultado : %s", movie)
-
-    logging.info("Ruta antes de los reemplazos de path: %s", movie)
-    movie = movie.replace("\\\\", "\\")
-    movie = movie.replace("\\", "/")
-    logging.info("Ruta despues: %s", movie)
-
-    return movie
 
 
 def resolve_mocked_item_info(emby_session, params, item_info):
