@@ -24,8 +24,18 @@ from lib.devices.oppo.mounted_share import (
     parse_mounted_share_response,
 )
 from lib.oppo_autoscript import unmount_oppo_path
-from lib.Xnoppo_AVR import get_hdmi_list, av_check_power, av_power_off, av_change_hdmi
-from lib.Xnoppo_TV import tv_test_conn, get_tv_sources, tv_change_hdmi, tv_set_prev
+from home_cinema_bridge.devices.av.web_control import (
+    get_hdmi_list,
+    av_check_power,
+    av_power_off,
+    av_change_hdmi,
+)
+from home_cinema_bridge.devices.tv.web_control import (
+    tv_test_conn,
+    get_tv_sources,
+    tv_change_hdmi,
+    tv_set_prev,
+)
 from lib.config_manager import (
     ensure_config_exists,
     is_configured,

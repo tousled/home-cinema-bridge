@@ -1,4 +1,4 @@
-from home_cinema_bridge.devices.av.factory import create_av_receiver
+from .factory import create_av_receiver
 
 
 def av_check_power(config):
