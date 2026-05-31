@@ -9,6 +9,8 @@ from home_cinema_bridge.playback.startup.models import (
     PlaybackOutputSwitchRequest,
     PlaybackOutputSwitchResult,
     OppoPlaybackPosition,
+    PlaybackStartupRequest,
+    PlaybackStartupResult,
     OppoPlaybackState,
     OppoPlaybackStartRequest,
     OppoPlaybackStartResult,
@@ -33,6 +35,34 @@ class PlaybackStartupOrchestrator:
         self._television = television
         self._av_receiver = av_receiver
         self._oppo_playback = oppo_playback
+
+    def start_playback(
+        self,
+        request: PlaybackStartupRequest,
+        *,
+        on_waiting: Callable[[int], None] | None = None,
+    ) -> PlaybackStartupResult:
+        output_switch_result = self.switch_playback_output_to_oppo(
+            request.output_switch_request
+        )
+        logger.info(
+            "Playback output switch result | successful=%s | tv=%s | "
+            "av_power=%s | av_input=%s",
+            output_switch_result.successful,
+            output_switch_result.tv_input_result.status.value,
+            output_switch_result.av_power_result.status.value,
+            output_switch_result.av_input_result.status.value,
+        )
+
+        oppo_start_result = self.start_oppo_playback(
+            request=request.oppo_start_request,
+            on_waiting=on_waiting,
+        )
+
+        return PlaybackStartupResult(
+            output_switch_result=output_switch_result,
+            oppo_start_result=oppo_start_result,
+        )
 
     def switch_playback_output_to_oppo(
         self,

@@ -196,19 +196,6 @@ class EmbyHttp(threading.Thread):
 
         return response
 
-    def set_movie(self,session_id,item_id,item_type,item_name):
-
-        response = self.client.set_session_viewing(
-            session_id,
-            item_type,
-            item_id,
-            item_name,
-        )
-        if self.config["DebugLevel"]>0: print (response.text)
-
-        return response
-
-
     def get_ulr_data(self,url, config, user_info):
 
         if url.find("{server}") != -1:

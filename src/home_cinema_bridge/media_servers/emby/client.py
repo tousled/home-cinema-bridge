@@ -110,13 +110,6 @@ class EmbyClient:
             data=payload,
         )
 
-    def set_session_viewing(self, session_id, item_type, item_id, item_name):
-        return self.post(
-            f"/emby/Sessions/{session_id}/Viewing"
-            f"?ItemType={item_type}&ItemId={item_id}&ItemName={item_name}",
-            data={},
-        )
-
     def get_sessions_by_user(self, user_id):
         return self.get_json(f"/emby/Sessions?ControllableByUserId={user_id}")
 

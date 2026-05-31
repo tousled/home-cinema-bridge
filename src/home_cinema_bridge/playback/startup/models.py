@@ -79,6 +79,12 @@ class OppoPlaybackStartRequest:
 
 
 @dataclass(frozen=True)
+class PlaybackStartupRequest:
+    output_switch_request: PlaybackOutputSwitchRequest
+    oppo_start_request: OppoPlaybackStartRequest
+
+
+@dataclass(frozen=True)
 class OppoPlaybackState:
     status: OppoPlaybackStatus
     category: OppoPlaybackCategory
@@ -102,6 +108,16 @@ class OppoPlaybackStartResult:
             and self.playback_command_accepted
             and self.playback_started_on_device
         )
+
+
+@dataclass(frozen=True)
+class PlaybackStartupResult:
+    output_switch_result: PlaybackOutputSwitchResult
+    oppo_start_result: OppoPlaybackStartResult
+
+    @property
+    def successful(self) -> bool:
+        return self.output_switch_result.successful and self.oppo_start_result.successful
 
 
 @dataclass(frozen=True)

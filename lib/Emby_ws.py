@@ -29,6 +29,8 @@ from home_cinema_bridge.playback.dispatch import (
     PlaybackIntentDispatcher,
     bridge_playback_is_active,
 )
+from home_cinema_bridge.playback.application import PlaybackApplicationService
+from home_cinema_bridge.playback.intent import PlaybackOrigin
 
 
 class XnoppoWs(threading.Thread):
@@ -126,7 +128,7 @@ class XnoppoWs(threading.Thread):
             # command path is moved behind the same playback intent boundary.
             self._playback_intent_dispatcher().dispatch_legacy_payload(
                 data,
-                scripterx=False,
+                origin=PlaybackOrigin.REMOTE_CONTROL_COMMAND,
             )
 
     def _general_commands(self,data):
@@ -292,7 +294,7 @@ class XnoppoWs(threading.Thread):
 
                             self._playback_intent_dispatcher().dispatch(
                                 playback_intent,
-                                scripterx=True,
+                                origin=PlaybackOrigin.OBSERVED_TV_CLIENT,
                             )
                             return 0
                         else:
@@ -343,11 +345,13 @@ class XnoppoWs(threading.Thread):
                     self.MonitoredState = ''
 
     def _playback_intent_dispatcher(self):
+        playback_application_service = PlaybackApplicationService(
+            playback_session=self.EmbySession,
+            reload_config=self.reload_config,
+        )
         return PlaybackIntentDispatcher(
             legacy_playback_session=self.EmbySession,
-            start_playback=playto_file,
-            switch_playback=playother,
-            reload_config=self.reload_config,
+            playback_application_service=playback_application_service,
             debug_level=self.ws_config.get("DebugLevel", 0),
         )
 

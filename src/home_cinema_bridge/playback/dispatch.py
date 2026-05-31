@@ -1,16 +1,14 @@
 from __future__ import annotations
 
 import logging
-import threading
 import time
-from collections.abc import Callable
 
 from home_cinema_bridge.media_servers.emby.session_events import (
     is_same_media_item_request,
     playback_intent_to_legacy_payload,
     playback_request_media_item_id,
 )
-from home_cinema_bridge.playback.intent import PlaybackIntent
+from home_cinema_bridge.playback.intent import PlaybackIntent, PlaybackOrigin
 
 
 def bridge_playback_is_active(playstate: str) -> bool:
@@ -30,24 +28,25 @@ class PlaybackIntentDispatcher:
         self,
         *,
         legacy_playback_session,
-        start_playback: Callable,
-        switch_playback: Callable,
-        reload_config: Callable[[], None],
+        playback_application_service,
         debug_level: int = 0,
         sleep=time.sleep,
     ) -> None:
         self._legacy_playback_session = legacy_playback_session
-        self._start_playback = start_playback
-        self._switch_playback = switch_playback
-        self._reload_config = reload_config
+        self._playback_application_service = playback_application_service
         self._debug_level = debug_level
         self._sleep = sleep
 
-    def dispatch(self, intent: PlaybackIntent, *, scripterx: bool) -> bool:
+    def dispatch(self, intent: PlaybackIntent, *, origin: PlaybackOrigin) -> bool:
         legacy_payload = playback_intent_to_legacy_payload(intent)
-        return self.dispatch_legacy_payload(legacy_payload, scripterx=scripterx)
+        return self.dispatch_legacy_payload(legacy_payload, origin=origin)
 
-    def dispatch_legacy_payload(self, legacy_payload: dict, *, scripterx: bool) -> bool:
+    def dispatch_legacy_payload(
+        self,
+        legacy_payload: dict,
+        *,
+        origin: PlaybackOrigin,
+    ) -> bool:
         if self._is_duplicate_request(legacy_payload):
             logging.info(
                 "Ignoring duplicate playback request | item_id=%s | playstate=%s",
@@ -60,18 +59,12 @@ class PlaybackIntentDispatcher:
         if self._legacy_playback_session.playstate in ("Playing", "Replay"):
             if self._debug_level > 0:
                 print("ya se esta reproduciendo algo")
-            self._switch_playback(
-                self._legacy_playback_session,
+            return self._playback_application_service.replace(
                 legacy_payload,
-                scripterx,
+                origin=origin,
             )
-            return True
 
-        thread = threading.Thread(
-            target=self._run_start_playback,
-            args=(legacy_payload, scripterx),
-        )
-        thread.start()
+        self._playback_application_service.start(legacy_payload, origin=origin)
         return True
 
     def _is_duplicate_request(self, legacy_payload: dict) -> bool:
@@ -94,13 +87,3 @@ class PlaybackIntentDispatcher:
         while self._legacy_playback_session.playstate == "Loading" and elapsed < timeout:
             self._sleep(3)
             elapsed = elapsed + 3
-
-    def _run_start_playback(self, legacy_payload: dict, scripterx: bool) -> None:
-        print("Thread Play: starting")
-        self._start_playback(
-            self._legacy_playback_session,
-            legacy_payload,
-            scripterx,
-        )
-        self._reload_config()
-        print("Thread Play: finishing")
