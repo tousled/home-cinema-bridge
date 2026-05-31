@@ -7,6 +7,7 @@ from home_cinema_bridge.devices.oppo.playback_state import (
 from home_cinema_bridge.playback.during import (
     PlaybackDuringPlaybackOrchestrator,
     PlaybackMonitoringRequest,
+    PlaybackMonitoringStopReason,
 )
 from home_cinema_bridge.playback.startup.models import (
     OppoPlaybackPosition,
@@ -73,6 +74,10 @@ class PlaybackDuringPlaybackOrchestratorTest(unittest.TestCase):
         self.assertEqual(12, result.position_seconds)
         self.assertEqual(120, result.duration_seconds)
         self.assertEqual(OppoPlaybackStatus.MEDIA_CENTER, result.final_state.status)
+        self.assertEqual(
+            PlaybackMonitoringStopReason.PLAYER_IDLE,
+            result.stop_reason,
+        )
         self.assertEqual(2, oppo.position_calls)
         self.assertEqual(1, len(progress.calls))
         self.assertEqual(12, progress.calls[0]["position_seconds"])
@@ -154,7 +159,49 @@ class PlaybackDuringPlaybackOrchestratorTest(unittest.TestCase):
 
         self.assertEqual(42, result.position_seconds)
         self.assertEqual(OppoPlaybackStatus.STOP, result.final_state.status)
+        self.assertEqual(
+            PlaybackMonitoringStopReason.TRANSITION_GRACE_EXCEEDED,
+            result.stop_reason,
+        )
         self.assertEqual(0, oppo.position_calls)
+
+    def test_stops_after_confirmed_natural_end_even_when_qpl_remains_playing(self):
+        oppo = RecordingOppoPlayback(
+            states=[
+                _state(OppoPlaybackStatus.PLAY, OppoPlaybackCategory.ACTIVE),
+                _state(OppoPlaybackStatus.PLAY, OppoPlaybackCategory.ACTIVE),
+                _state(OppoPlaybackStatus.PLAY, OppoPlaybackCategory.ACTIVE),
+                _state(OppoPlaybackStatus.PLAY, OppoPlaybackCategory.ACTIVE),
+            ],
+            positions=[
+                OppoPlaybackPosition(current_seconds=3528, total_seconds=3529),
+                OppoPlaybackPosition(current_seconds=3533, total_seconds=3529),
+                OppoPlaybackPosition(current_seconds=3533, total_seconds=3529),
+            ],
+        )
+        progress = RecordingProgressPublisher()
+        orchestrator = PlaybackDuringPlaybackOrchestrator(
+            oppo_playback=oppo,
+            progress_reporter=progress,
+            sleep=lambda seconds: None,
+        )
+
+        result = orchestrator.monitor_until_stopped(
+            PlaybackMonitoringRequest(
+                progress_interval_seconds=1,
+                max_end_of_media_polls=2,
+            )
+        )
+
+        self.assertEqual(3529, result.position_seconds)
+        self.assertEqual(3529, result.duration_seconds)
+        self.assertEqual(OppoPlaybackStatus.PLAY, result.final_state.status)
+        self.assertEqual(
+            PlaybackMonitoringStopReason.NATURAL_END,
+            result.stop_reason,
+        )
+        self.assertEqual(3, oppo.position_calls)
+        self.assertEqual(3529, progress.calls[-1]["position_seconds"])
 
 
 def _state(status, category):

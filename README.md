@@ -16,7 +16,7 @@ This fork is currently in **pre-1.0 modernization**. The codebase is being progr
 
 ## Project status
 
-Current release: `0.5.0`
+Current release: `0.5.1`
 
 Current version line: `0.x`
 

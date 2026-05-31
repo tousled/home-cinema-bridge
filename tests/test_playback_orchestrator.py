@@ -4,7 +4,10 @@ from home_cinema_bridge.devices.oppo.playback_state import (
     OppoPlaybackCategory,
     OppoPlaybackStatus,
 )
-from home_cinema_bridge.playback.during import PlaybackMonitoringResult
+from home_cinema_bridge.playback.during import (
+    PlaybackMonitoringResult,
+    PlaybackMonitoringStopReason,
+)
 from home_cinema_bridge.playback.finish import (
     PlaybackFinishResult,
 )
@@ -127,8 +130,36 @@ class PlaybackOrchestratorTest(unittest.TestCase):
         self.assertEqual(1, finish.requests[0].position_seconds)
         self.assertTrue(finish.requests[0].tv_enabled)
         self.assertTrue(finish.requests[0].av_enabled)
+        self.assertFalse(finish.requests[0].media_ended)
         self.assertEqual(5, finish.requests[0].max_idle_confirmation_polls)
         self.assertEqual([], error_handler.requests)
+
+    def test_passes_natural_media_end_to_finish_phase(self):
+        startup_result = _startup_result(successful=True)
+        finish = RecordingFinishPlaybackOrchestrator(_finish_result())
+        orchestrator = PlaybackOrchestrator(
+            startup_orchestrator=RecordingStartupOrchestrator(startup_result),
+            startup_completion_service=RecordingStartupCompletionService(),
+            during_playback_orchestrator=RecordingDuringPlaybackOrchestrator(
+                _monitoring_result(
+                    position_seconds=10,
+                    duration_seconds=10,
+                    stop_reason=PlaybackMonitoringStopReason.NATURAL_END,
+                )
+            ),
+            finish_playback_orchestrator=finish,
+            error_handler=RecordingErrorHandler(),
+        )
+
+        result = orchestrator.play_until_stopped(
+            PlaybackOrchestrationRequest(
+                startup_request=_startup_request(),
+                startup_completion_request=_startup_completion_request(),
+            )
+        )
+
+        self.assertTrue(result.successful)
+        self.assertTrue(finish.requests[0].media_ended)
 
     def test_can_skip_output_restore_on_finish_for_replacement(self):
         startup_result = _startup_result(successful=True)
@@ -326,11 +357,17 @@ def _startup_result(*, successful):
     )
 
 
-def _monitoring_result():
+def _monitoring_result(
+    *,
+    position_seconds=1,
+    duration_seconds=10,
+    stop_reason=PlaybackMonitoringStopReason.PLAYER_IDLE,
+):
     return PlaybackMonitoringResult(
-        position_seconds=1,
-        duration_seconds=10,
+        position_seconds=position_seconds,
+        duration_seconds=duration_seconds,
         final_state=_state(OppoPlaybackStatus.STOP),
+        stop_reason=stop_reason,
     )
 
 

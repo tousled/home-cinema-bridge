@@ -16,6 +16,7 @@ from home_cinema_bridge.playback.ports import (
 )
 from home_cinema_bridge.playback.startup.models import (
     DeviceCommandResult,
+    DeviceCommandStatus,
     OppoPlaybackState,
 )
 
@@ -52,7 +53,9 @@ class FinishPlaybackOrchestrator:
         self._sleep = sleep
 
     def finish(self, request: PlaybackFinishRequest) -> PlaybackFinishResult:
-        final_player_state, player_idle_result = self._confirm_idle_state(request)
+        final_player_state, player_idle_result = self._close_and_confirm_player_state(
+            request
+        )
         media_server_stop_result = self._stopped_reporter.stopped(
             position_seconds=request.position_seconds,
             duration_seconds=request.duration_seconds,
@@ -78,6 +81,44 @@ class FinishPlaybackOrchestrator:
             av_audio_result=av_audio_result,
             final_player_state=final_player_state,
         )
+
+    def _close_and_confirm_player_state(
+        self,
+        request: PlaybackFinishRequest,
+    ) -> tuple[OppoPlaybackState, DeviceCommandResult]:
+        close_result = self._close_player_after_natural_end(request)
+        if close_result.status == DeviceCommandStatus.FAILED:
+            return request.final_player_state, close_result
+
+        final_player_state, idle_result = self._confirm_idle_state(request)
+        if close_result.successful and idle_result.successful:
+            return final_player_state, DeviceCommandResult.success(
+                f"{close_result.detail}; {idle_result.detail}"
+            )
+
+        return final_player_state, idle_result
+
+    def _close_player_after_natural_end(
+        self,
+        request: PlaybackFinishRequest,
+    ) -> DeviceCommandResult:
+        if not request.media_ended:
+            return DeviceCommandResult.skipped("Playback did not end by media position.")
+
+        if request.final_player_state.category != OppoPlaybackCategory.ACTIVE:
+            return DeviceCommandResult.skipped("Player is not active after media end.")
+
+        if self._oppo_playback is None:
+            return DeviceCommandResult.skipped(
+                "No OPPO playback adapter configured for media-end close."
+            )
+
+        logger.info(
+            "Closing OPPO playback after natural media end | state=%s | category=%s",
+            request.final_player_state.status.value,
+            request.final_player_state.category.value,
+        )
+        return self._oppo_playback.stop_playback()
 
     def _confirm_idle_state(
         self,

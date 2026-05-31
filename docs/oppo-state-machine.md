@@ -83,6 +83,17 @@ A short/early return flow also produced:
 
 Therefore, OPEN and CLOSE are transition states, not errors.
 
+Natural media end can behave differently from a manual stop. A real episode
+ending showed QPL remaining in `PLAY` while `getplayingtime` repeatedly reported
+a current position greater than the total runtime:
+
+    current=3533 total=3529 state=PLAY
+
+In this case the player is effectively at the end of the file even though QPL
+has not yet changed. The bridge should confirm the end position over consecutive
+polls, normalize the final progress to the runtime, and close playback with
+`STP` during finish if the player still reports an active state.
+
 ## Mapping from legacy logic to QPL
 
 | Legacy signal | QPL equivalent | Meaning |
@@ -119,3 +130,5 @@ Current guidance:
    player as ready for the next startup.
 7. Use OPPO `STP` as the semantic playback-close command. Do not use `EJT` as a
    generic cleanup command; it is tray open/close.
+8. Treat repeated `current >= total` playback-time samples as natural media end,
+   even if QPL still says `PLAY`.
