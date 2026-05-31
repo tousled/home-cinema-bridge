@@ -71,6 +71,24 @@ class LegacyTelevisionOutput(TelevisionOutputPort):
                 f"TV input switch failed: {type(exc).__name__}: {exc}"
             )
 
+    def return_to_app(self, app_id: str | None = None) -> DeviceCommandResult:
+        try:
+            if app_id and hasattr(self._controller, "config"):
+                self._controller.config["current_LG"] = app_id
+
+            logger.info("Returning TV to app | app_id=%s", app_id)
+            result = _run(self._controller.return_to_previous_app())
+
+            return _to_device_command_result(
+                operation="return TV to app",
+                legacy_result=_unwrap_value(result),
+            )
+        except Exception as exc:
+            logger.exception("TV app restore failed | app_id=%s", app_id)
+            return DeviceCommandResult.failed(
+                f"TV app restore failed: {type(exc).__name__}: {exc}"
+            )
+
 
 @deprecated(
     "LegacyAvReceiverOutput is a temporary bridge while Xnoppo.py still owns "
@@ -121,6 +139,21 @@ class LegacyAvReceiverOutput(AvReceiverOutputPort):
             logger.exception("AV receiver input switch failed | input_id=%s", input_id)
             return DeviceCommandResult.failed(
                 f"AV receiver input switch failed: {type(exc).__name__}: {exc}"
+            )
+
+    def restore_tv_audio(self) -> DeviceCommandResult:
+        try:
+            logger.info("Restoring AV receiver to TV audio.")
+            result = self._receiver.restore_tv_audio()
+
+            return _to_device_command_result(
+                operation="restore AV receiver TV audio",
+                legacy_result=_unwrap_value(result),
+            )
+        except Exception as exc:
+            logger.exception("AV receiver TV audio restore failed.")
+            return DeviceCommandResult.failed(
+                f"AV receiver TV audio restore failed: {type(exc).__name__}: {exc}"
             )
 
 

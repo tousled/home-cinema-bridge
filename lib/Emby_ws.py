@@ -20,7 +20,6 @@ import logging
 import json
 import time
 from .Emby_http import EmbyHttp
-from lib.playback_manager import PlaybackManager
 from .Xnoppo import *
 
 class XnoppoWs(threading.Thread):
@@ -47,30 +46,6 @@ class XnoppoWs(threading.Thread):
 
     def thread_function_play(self, data, scripterx=False):
         print("Thread Play: starting")
-
-        # --- INICIO BLOQUE ROBUSTO (Gestión de Errores LG/OPPO) ---
-        try:
-            # 1. Instanciamos el Manager con la configuración actual
-            manager = PlaybackManager(self.ws_config)
-
-            # 2. Espera Activa: No intentamos reproducir hasta que el OPPO tenga red
-            # Esto soluciona el fallo cuando la TV LG envía la orden demasiado rápido
-            is_online = manager.wait_for_oppo_network()
-
-            if is_online:
-                # 3. Despertar / Handshake HDMI
-                # Enviamos tecla 'EJT' (Eject) o similar para asegurar que sale del reposo
-                # Usamos sendremotekey importado de .Xnoppo
-                if self.ws_config.get("DebugLevel", 0) > 0: print("Despertando OPPO...")
-                sendremotekey("EJT", self.ws_config)
-                time.sleep(2)  # Damos tiempo al OPPO para procesar el despertar
-            else:
-                print("ADVERTENCIA: OPPO no responde a la red. Intentando reproducción de todas formas...")
-
-        except Exception as e:
-            print(f"Error en el pre-chequeo de PlaybackManager: {e}")
-            # No bloqueamos el flujo si falla el manager, intentamos reproducir igual
-        # --- FIN BLOQUE ROBUSTO ---
 
         playto_file(self.EmbySession, data, scripterx)
         self.reload_config()
@@ -357,7 +332,7 @@ class XnoppoWs(threading.Thread):
     def _playstate(self, data):
         command = data['Command']
         if command == 'Stop':
-            sendremotekey('STP',self.ws_config)
+            sendremotekey('HOM',self.ws_config)
         elif command == 'Pause':
             sendremotekey('PAU',self.ws_config)
         elif command == 'Unpause':

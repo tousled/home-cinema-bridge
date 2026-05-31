@@ -118,5 +118,9 @@ def av_change_hdmi(config):
     return create_av_receiver(config).change_hdmi()
 
 
+def av_restore_tv_audio(config):
+    return create_av_receiver(config).restore_tv_audio()
+
+
 def av_power_off(config):
     return create_av_receiver(config).power_off()

@@ -5,11 +5,14 @@ import socket
 import time
 import urllib.parse
 
-import requests
-
 from home_cinema_bridge.media_servers.emby import (
     MediaServerPlaybackContext,
     MediaServerPlaybackEventPublisher,
+)
+from home_cinema_bridge.network.http import get_http_session
+from home_cinema_bridge.playback.error_handling import (
+    PlaybackErrorRecoveryRequest,
+    create_playback_error_handler,
 )
 from home_cinema_bridge.playback.startup import (
     OppoPlaybackStartRequest,
@@ -43,6 +46,7 @@ from home_cinema_bridge.playback.timing import PlaybackStartupTimer
 
 from .Xnoppo_AVR import (
     av_power_off,
+    av_restore_tv_audio,
 )
 from .Xnoppo_TV import tv_set_prev
 
@@ -246,7 +250,7 @@ def getfilelist(config, folder, mounted_share: OppoMountedShare):
 
     logging.debug(url)
 
-    response = requests.get(url, headers=headers)
+    response = get_http_session("oppo-legacy").get(url, headers=headers)
     test = response.content
     b = test.rsplit(b"\x01")
 
@@ -296,7 +300,7 @@ def getNfsShareFolderlist(config):
     url = "http://" + config["Oppo_IP"] + ":436/getNfsShareFolderlist"
     headers = {}
     logging.debug(url)
-    response = requests.get(url, headers=headers)
+    response = get_http_session("oppo-legacy").get(url, headers=headers)
     test = response.content
     b = test.rsplit(b"\x01")
     files = []
@@ -337,7 +341,7 @@ def getSambaShareFolderlist(config):
     url = "http://" + config["Oppo_IP"] + ":436/getSambaShareFolderlist"
     headers = {}
     logging.debug(url)
-    response = requests.get(url, headers=headers)
+    response = get_http_session("oppo-legacy").get(url, headers=headers)
     test = response.content
     b = test.rsplit(b"\x01")
     files = []
@@ -608,7 +612,7 @@ def sendremotekey(key, config):
         + "%22%7D"
     )
     headers = {}
-    response = requests.get(url, headers=headers)
+    response = get_http_session("oppo-legacy").get(url, headers=headers)
     return response.text
 
 
@@ -989,7 +993,11 @@ def playto_file(EmbySession, data, scripterx=False):
                 print(response_data5)
 
         startup_orchestrator = create_playback_startup_orchestrator(EmbySession.config)
-        switch_playback_output_to_oppo(EmbySession, startup_orchestrator, startup_timer)
+        output_switch_result = switch_playback_output_to_oppo(
+            EmbySession,
+            startup_orchestrator,
+            startup_timer,
+        )
 
         with startup_timer.measure_step("resolve_media_path"):
             item_info, _ = resolve_mocked_item_info(EmbySession, params, item_info)
@@ -1081,6 +1089,17 @@ def playto_file(EmbySession, data, scripterx=False):
         )
 
         if not oppo_playback_start_result.successful:
+            with startup_timer.measure_step("recover_after_oppo_startup_failure"):
+                error_handler = create_playback_error_handler(EmbySession.config)
+                error_handler.recover(
+                    PlaybackErrorRecoveryRequest(
+                        reason="oppo_startup_failed",
+                        previous_tv_app_id=output_switch_result.previous_tv_app_id,
+                        tv_enabled=EmbySession.config.get("TV") is True,
+                        av_enabled=EmbySession.config.get("AV") is True,
+                    )
+                )
+
             if not oppo_playback_start_result.media_mounted:
                 error_message = (
                     EmbySession.lang["x_msg_error_mount"]
@@ -1291,8 +1310,14 @@ def playto_file(EmbySession, data, scripterx=False):
                     if EmbySession.config["DebugLevel"] > 0:
                         print(result)
                     logging.info("Resultado: %s", str(result))
-                except:
-                    pass
+                except Exception:
+                    logging.exception("Unable to return LG TV to previous app")
+            if EmbySession.config["AV"] == True:
+                try:
+                    result = av_restore_tv_audio(EmbySession.config)
+                    logging.info("AV receiver TV audio restore result: %s", str(result))
+                except Exception:
+                    logging.exception("Unable to restore AV receiver to TV audio")
         if (
             EmbySession.config["AV"] == True
             and EmbySession.config["AV_Always_ON"] == False

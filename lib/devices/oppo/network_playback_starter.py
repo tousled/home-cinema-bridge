@@ -4,8 +4,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 
-import requests
-
+from home_cinema_bridge.network.http import get_http_session
 from lib.devices.oppo.control_api_client import OppoControlApiClient
 from lib.devices.oppo.mounted_share import (
     OppoMountedShare,
@@ -244,7 +243,7 @@ class OppoNetworkPlaybackStarter:
         url = self.control_api_client._build_url(endpoint)
         logging.debug(url)
 
-        response = requests.get(
+        response = get_http_session("oppo-network-playback").get(
             url,
             headers={},
             timeout=self.config.get("timeout_oppo_conection", 3),

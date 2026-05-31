@@ -85,6 +85,12 @@ class OppoMediaControlPlayback:
 
             self._login_network_server(network_folder)
             mount_response_text = self._mount_network_folder(network_folder)
+            logger.info(
+                "OPPO MediaControl mount response | server=%s | folder=%s | response=%s",
+                network_folder.media_server,
+                network_folder.folder,
+                mount_response_text,
+            )
             mount_response, mounted_share = parse_mounted_share_response(
                 mount_response_text,
                 server=network_folder.media_server,
@@ -103,6 +109,12 @@ class OppoMediaControlPlayback:
             playback_response = self._start_mounted_share_playback(
                 request=request,
                 mounted_share=mounted_share,
+            )
+            logger.info(
+                "OPPO MediaControl playback command response | mounted_path=%s | filename=%s | response=%s",
+                mounted_share.mount_path,
+                location.playback_file_name,
+                playback_response,
             )
 
             if not playback_response.get("success"):

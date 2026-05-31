@@ -113,7 +113,18 @@ class EmbyHttp(threading.Thread):
         message_data = {}
         message_data["Command"] = 'Stop'
 
+        logging.info(
+            "Sending Emby session playback stop | session_id=%s | payload=%s",
+            session_id,
+            message_data,
+        )
         response = self.client.stop_session_playback(session_id, message_data)
+        logging.info(
+            "Emby session playback stop response | session_id=%s | status=%s | body=%s",
+            session_id,
+            getattr(response, "status_code", None),
+            getattr(response, "text", ""),
+        )
         if self.config["DebugLevel"]>0: print (response.text)
 
         return response
@@ -123,7 +134,19 @@ class EmbyHttp(threading.Thread):
         return self.client.get_headers(user_info)
 
     def send_message2(self,session_id, sms_txt, timeout=3500):
+        logging.info(
+            "Sending Emby session message | session_id=%s | timeout_ms=%s | text=%s",
+            session_id,
+            timeout,
+            sms_txt,
+        )
         response = self.client.send_session_message(session_id, sms_txt, timeout)
+        logging.info(
+            "Emby session message response | session_id=%s | status=%s | body=%s",
+            session_id,
+            getattr(response, "status_code", None),
+            getattr(response, "text", ""),
+        )
         if self.config["DebugLevel"]>0: print (response.text)
 
         return response

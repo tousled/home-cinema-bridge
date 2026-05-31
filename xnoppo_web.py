@@ -355,7 +355,11 @@ def test_path(config, server):
         test_media_path = _build_test_media_path(server)
         rutas = get_mount_path(test_media_path, server)
     except ValueError as exc:
-        logging.warning("Invalid path test configuration: %s", exc)
+        logging.warning(
+            "Invalid path test configuration: %s | payload=%s",
+            exc,
+            server,
+        )
         return str(exc)
 
     result2 = test_mount_path(config, rutas["Servidor"], rutas["Carpeta"])

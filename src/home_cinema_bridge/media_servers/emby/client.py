@@ -1,7 +1,7 @@
 import hashlib
 from urllib.parse import quote
 
-import requests
+from home_cinema_bridge.network.http import get_http_session
 
 
 class EmbyClient:
@@ -13,12 +13,12 @@ class EmbyClient:
         user_name: str,
         user_password: str,
         *,
-        http_session=requests,
+        http_session=None,
     ):
         self.server_url = server_url.rstrip("/")
         self.user_name = user_name
         self.user_password = user_password
-        self._http = http_session
+        self._http = http_session or get_http_session("emby")
         self.user_info = None
 
     @classmethod

@@ -153,6 +153,32 @@ docker run --rm \
 
 For NAS / Portainer deployments, using a Git-backed stack is recommended.
 
+## AV receiver setup
+
+### Denon / Marantz ARC and input recovery
+
+When a Denon or Marantz receiver powers on from standby, TV ARC/CEC can switch
+the receiver back to TV Audio after the app has selected the OPPO HDMI input.
+The app mitigates this by querying the receiver input (`SI?`) and reapplying the
+configured OPPO input if it observes `SITV`.
+
+For setups where ARC/CEC keeps overriding the selected input, disable ARC on the
+receiver:
+
+1. Open the receiver's on-screen setup menu.
+2. Go to **General** > **HDMI Setup** > **ARC**.
+3. Set **ARC** to **Off**.
+
+With ARC disabled, the app must restore TV audio explicitly when OPPO playback
+ends. Configure the receiver's TV audio input as usual; Denon and Marantz use
+`SITV`.
+
+### Other AV receivers
+
+For receivers that do not support input state queries (Yamaha, NAD, Onkyo,
+Scripts), configure `av_delay_hdmi` in the web UI. This adds a delay after
+power-on before the app attempts to change the HDMI input.
+
 ## Configuration
 
 The app creates or uses a runtime `config.json`.
@@ -247,4 +273,3 @@ The original upstream changelog is preserved in [`docs/UPSTREAM_CHANGELOG.md`](d
 This project inherits licensing considerations from the original project and its dependencies.
 
 Before publishing formal releases or accepting external contributions, review and clarify the final license file.
-

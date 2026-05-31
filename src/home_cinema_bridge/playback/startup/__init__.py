@@ -9,8 +9,6 @@ from home_cinema_bridge.playback.startup.models import (
     PlaybackOutputSwitchResult,
     PlayerMediaFileLocation,
 )
-from home_cinema_bridge.playback.startup.orchestrator import PlaybackStartupOrchestrator
-
 __all__ = [
     "DeviceCommandResult",
     "DeviceCommandStatus",
@@ -20,6 +18,5 @@ __all__ = [
     "OppoPlaybackState",
     "PlaybackOutputSwitchRequest",
     "PlaybackOutputSwitchResult",
-    "PlaybackStartupOrchestrator",
     "PlayerMediaFileLocation",
 ]
