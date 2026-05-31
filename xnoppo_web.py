@@ -48,7 +48,7 @@ from home_cinema_bridge.devices.av.factory import get_supported_av_models
 
 
 def get_version():
-    return "2.03"
+    return "0.5.0"
 
 
 def thread_function(ws_object):

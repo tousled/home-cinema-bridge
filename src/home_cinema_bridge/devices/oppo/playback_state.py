@@ -97,14 +97,3 @@ def classify_oppo_status(status: str | OppoPlaybackStatus) -> OppoPlaybackCatego
 
     return OppoPlaybackCategory.UNKNOWN
 
-
-def is_active_playback_state(status: str | OppoPlaybackStatus) -> bool:
-    return classify_oppo_status(status) == OppoPlaybackCategory.ACTIVE
-
-
-def is_idle_state(status: str | OppoPlaybackStatus) -> bool:
-    return classify_oppo_status(status) == OppoPlaybackCategory.IDLE
-
-
-def is_transition_state(status: str | OppoPlaybackStatus) -> bool:
-    return classify_oppo_status(status) == OppoPlaybackCategory.TRANSITION

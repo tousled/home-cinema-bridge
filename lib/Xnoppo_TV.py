@@ -21,7 +21,3 @@ def tv_change_hdmi(config):
 
 def tv_set_prev(config):
     return _run(create_tv_controller(config).return_to_previous_app()).value
-
-
-def tv_get_current_app(config):
-    return _run(create_tv_controller(config).get_current_app())

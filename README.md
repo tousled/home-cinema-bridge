@@ -16,6 +16,8 @@ This fork is currently in **pre-1.0 modernization**. The codebase is being progr
 
 ## Project status
 
+Current release: `0.5.0`
+
 Current version line: `0.x`
 
 This fork is not considered API-stable yet. Versions before `1.0.0` may introduce breaking changes while the legacy architecture is progressively replaced.
@@ -57,6 +59,8 @@ Typical flow:
 - Subtitle selection handling.
 - OPPO QPL diagnostics for playback-state observation.
 - Python 3.14 runtime support.
+- Parent playback orchestration for startup, during-playback monitoring,
+  finish/return, replacement, and centralized error recovery.
 
 ## Supported AV integrations
 
@@ -84,6 +88,15 @@ This fork has already replaced several legacy areas:
 - Migrated AV handling from copied Python files to adapter/factory classes.
 - Removed the legacy `web/libraries/AV` code-copying flow.
 - Moved OPPO Autoscript unmount logic into its own module.
+- Removed the legacy `lib/Xnoppo.py` playback entry point.
+- Replaced the legacy `playto_file` / `playother` playback paths with a parent
+  playback orchestrator.
+- Replaced legacy active-playback detection based on `getglobalinfo` text with
+  OPPO QPL state monitoring.
+- Added a clean finish flow that reports stopped playback to Emby, waits for
+  OPPO idle state, returns LG to the previous app, and restores AV TV audio.
+- Added active-playback replacement through the normal stop/start lifecycle,
+  without remounting over an already-playing OPPO session.
 
 ## Architecture direction
 
@@ -215,6 +228,19 @@ legacy MediaControl preparation sequence. None restored NFS mounting in that
 state. The only proven recovery in that test was rebooting/power-cycling the
 OPPO.
 
+### Replacement playback returns to HDMI instead of Emby
+
+This was a bug fixed in `0.5.0`.
+
+When replacing one active OPPO playback with another item, the LG TV is already
+on the OPPO HDMI input. The app must preserve the original non-HDMI app for the
+whole room playback flow. If the replacement startup reads the current LG app
+again and stores HDMI as the previous app, the final stop returns to HDMI
+instead of Emby.
+
+The current flow preserves the first non-HDMI TV app across replacement cycles
+and uses it for the final finish/return step.
+
 ## Configuration
 
 The app creates or uses a runtime `config.json`.
@@ -251,6 +277,7 @@ This fork currently uses pre-1.0 semantic versioning:
 0.2.x  Docker runtime
 0.3.x  Playback / QPL / subtitle hardening
 0.4.x  Python 3.14 + AV adapters/factory
+0.5.x  Playback orchestration and replacement stabilization
 ```
 
 The future `1.0.0` release will represent the first stable modernized version of this fork.
@@ -261,11 +288,12 @@ See [`CHANGELOG.md`](CHANGELOG.md) for details.
 
 Near-term:
 
-- migrate TV handling to adapters/factory
-- remove legacy `web/libraries/TV` copy-based flow
-- integrate improved LG handling
-- harden OPPO HTTP calls when the player is powered off or unreachable
-- improve playback startup observability and performance
+- migrate remaining legacy web configuration and OPPO diagnostic flows
+- continue extracting Emby API calls from the legacy `EmbySession` boundary
+- improve OPPO stale NFS mount-state diagnostics and manual recovery guidance
+- modernize TV handling where legacy wrappers still remain
+- compare startup timings between the latest release and older tags using
+  controlled MKV/ISO validation runs
 
 Later:
 

@@ -40,7 +40,7 @@ Therefore, this state is not considered manageable by the QPL state machine. The
 
 Current classification:
 
-    ACTIVE_PLAYBACK_STATES = {"PLAY", "PAUSE", "DISC_MENU"}
+    ACTIVE_PLAYBACK_STATES = {"PLAY", "PAUSE", "DISC_MENU", "FFWD", "FREV", "SFWD", "SREV", "STEP"}
     IDLE_STATES = {"HOME_MENU", "SCREEN_SAVER", "MEDIA_CENTER", "NO_DISC"}
     TRANSITION_STATES = {"STOP", "OPEN", "CLOSE", "LOADING"}
 
@@ -51,6 +51,9 @@ Current classification:
 | PLAY | Active | Content is actively playing |
 | PAUSE | Active | Playback is paused but content is still active |
 | DISC_MENU | Active | Blu-ray/disc menu is visible; do not treat as stopped |
+| FFWD/FREV | Active | Fast-forward/rewind trick-play; content remains active |
+| SFWD/SREV | Active | Slow-forward/slow-reverse trick-play; content remains active |
+| STEP | Active | Step mode; content remains active |
 | HOME_MENU | Idle | Player is back at home menu |
 | SCREEN_SAVER | Idle | Player is idle/screensaver |
 | MEDIA_CENTER | Idle | Player is in media center/navigation |
@@ -104,10 +107,15 @@ Future hardening should preserve the last valid non-zero playback position and a
 
 ## Implementation guidance
 
-Recommended next steps:
+Current guidance:
 
 1. Keep QPL probing through raw TCP sockets.
 2. Do not use Telnet clients for OPPO IP control.
 3. Treat QPW as useful for power checks only, not for playback-state observation.
 4. Prefer QPL/internal container logs for playback-state decisions.
-5. Add progress hardening by preserving the last valid non-zero playback position.
+5. Preserve the last valid non-zero playback position and ignore transient zero
+   `getplayingtime` samples.
+6. During finish/replacement, wait for a stable idle state before treating the
+   player as ready for the next startup.
+7. Use OPPO `STP` as the semantic playback-close command. Do not use `EJT` as a
+   generic cleanup command; it is tray open/close.

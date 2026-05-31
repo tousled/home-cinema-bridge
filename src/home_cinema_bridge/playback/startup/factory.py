@@ -20,12 +20,6 @@ class PlaybackStartupWiring:
     oppo_playback: OppoPlaybackPort
 
 
-def create_playback_startup_orchestrator(
-    config: dict[str, Any],
-) -> PlaybackStartupOrchestrator:
-    return create_playback_startup_wiring(config).startup_orchestrator
-
-
 def create_playback_startup_wiring(
     config: dict[str, Any],
 ) -> PlaybackStartupWiring:
