@@ -62,7 +62,7 @@ class EmbyHttp(threading.Thread):
         params["subtitle_stream_index"] = subtitle_stream_index
         params["audio_stream_index"] = audio_stream_index
         params["ControllingUserId"] = data.get("ControllingUserId", "")
-        params["Session_id"] = data.get("SessionID", None)
+        params["Session_id"] = data.get("SessionID") or data.get("Id")
         params["play_session_id"] = data.get("PlaySessionId", "")
         params["DeviceName"] = data.get("DeviceName", "")
         params["Device_Id"] = data.get("Device_Id", "")

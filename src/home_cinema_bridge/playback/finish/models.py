@@ -26,6 +26,7 @@ class PlaybackFinishRequest:
 @dataclass(frozen=True)
 class PlaybackFinishResult:
     media_server_stop_result: object | None
+    player_idle_result: DeviceCommandResult
     tv_app_result: DeviceCommandResult
     av_audio_result: DeviceCommandResult
     final_player_state: OppoPlaybackState
@@ -33,6 +34,7 @@ class PlaybackFinishResult:
     @property
     def successful(self) -> bool:
         return (
-            self.tv_app_result.status != DeviceCommandStatus.FAILED
+            self.player_idle_result.status != DeviceCommandStatus.FAILED
+            and self.tv_app_result.status != DeviceCommandStatus.FAILED
             and self.av_audio_result.status != DeviceCommandStatus.FAILED
         )

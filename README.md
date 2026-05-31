@@ -179,6 +179,42 @@ For receivers that do not support input state queries (Yamaha, NAD, Onkyo,
 Scripts), configure `av_delay_hdmi` in the web UI. This adds a delay after
 power-on before the app attempts to change the HDMI input.
 
+## FAQ / Troubleshooting
+
+### OPPO NFS mount returns `{"success":false,"retInfo":"failed"}`
+
+This error means the OPPO / Chinoppo MediaControl API rejected the network
+folder mount request. It is not always caused by a bad Emby path.
+
+Before changing path mappings or adding retries, verify the real state:
+
+- OPPO playback state through QPL should be idle (`HOME MENU`, `SCREEN SAVER`,
+  or `MEDIA CENTER`).
+- OPPO `getglobalinfo` should not report active video, BDMV, or disc playback.
+- OPPO `getdevicelist` should still list the NFS server.
+- `loginNfsServer` should return success.
+- `getNfsShareFolderlist` should show the exported root, for example
+  `volume1/Video`.
+- The NAS should export the expected path to the OPPO player IP.
+
+If all of the above is true but `mountNfsSharedFolder` still returns
+`retInfo=failed` for folders that normally work, the likely cause is a stale or
+stuck OPPO NFS/MediaControl client state. Do not fix this by adding blind
+sleeps or repeated mount retries. First reboot or power-cycle the OPPO and test
+the same mount again.
+
+If rebooting the OPPO fixes the mount, treat it as an OPPO-side state cleanup
+problem. Any automatic recovery should be implemented deliberately in the
+playback finish/error-recovery flow, based on the specific command or state
+transition proven to reset the OPPO safely.
+
+During playback stabilization, the following command-level cleanups were tested
+after an ISO/Blu-ray playback left NFS mounts failing: `RST`, `APP NET`, `CLR`,
+`STP`/`HOM`, an `EJT` open/close cycle, OPPO mount-slot `umount`, and the older
+legacy MediaControl preparation sequence. None restored NFS mounting in that
+state. The only proven recovery in that test was rebooting/power-cycling the
+OPPO.
+
 ## Configuration
 
 The app creates or uses a runtime `config.json`.

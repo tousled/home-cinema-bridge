@@ -2,10 +2,15 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from dataclasses import dataclass
 from typing import Any
 
 from home_cinema_bridge.devices.av.factory import create_av_receiver
+from home_cinema_bridge.media_servers.emby.session_events import (
+    is_same_media_item_request,
+    playback_request_media_item_id,
+)
 from home_cinema_bridge.playback.factory import create_playback_orchestrator_wiring
 from home_cinema_bridge.playback.intent import PlaybackOrigin
 from home_cinema_bridge.playback.legacy_startup_preparation import (
@@ -31,6 +36,9 @@ from lib.devices.oppo.playback_status_client import OppoPlaybackStatusClient
 logger = logging.getLogger(__name__)
 MEDIA_SERVER_TICKS_PER_SECOND = 10_000_000
 _qpl_last_observed_states = {}
+BRIDGE_OWNED_PLAYBACK_STATES = ("Loading", "Playing", "Replay")
+NORMAL_FINISH_IDLE_CONFIRMATION_POLLS = 5
+REPLACEMENT_FINISH_IDLE_CONFIRMATION_POLLS = 60
 
 
 @dataclass(frozen=True)
@@ -48,8 +56,8 @@ class PlaybackApplicationService:
     """Application entrypoint for playback requests.
 
     Start requests now enter the clean parent playback orchestrator from here.
-    Replace requests are currently rejected until the active-playback
-    replacement semantics are redesigned and validated.
+    Replacement requests stop the active flow through the same finish path and
+    then start the requested media item through the parent orchestrator.
     """
 
     def __init__(
@@ -57,38 +65,166 @@ class PlaybackApplicationService:
         *,
         playback_session,
         reload_config,
+        stop_active_playback=None,
+        sleep=time.sleep,
     ) -> None:
         self._playback_session = playback_session
         self._reload_config = reload_config
+        self._stop_active_playback = stop_active_playback or (
+            lambda: _stop_active_player_playback_before_replacement(
+                self._playback_session
+            )
+        )
+        self._active_thread: threading.Thread | None = None
+        self._replacement_thread: threading.Thread | None = None
+        self._thread_lock = threading.Lock()
+        self._replacement_requested = threading.Event()
+        self._last_playback_result = None
+        self._playback_return_tv_app_id: str | None = None
+        self._sleep = sleep
+
+    def request_playback(
+        self,
+        playback_payload: dict,
+        *,
+        origin: PlaybackOrigin,
+    ) -> bool:
+        if self._is_duplicate_request(playback_payload):
+            logger.info(
+                "Ignoring duplicate playback request | item_id=%s | playstate=%s",
+                playback_request_media_item_id(playback_payload),
+                self._playback_session.playstate,
+            )
+            return False
+
+        self._wait_for_loading_to_finish()
+        if self._playback_session.playstate in ("Playing", "Replay"):
+            if self._playback_session.config.get("DebugLevel", 0) > 0:
+                print("ya se esta reproduciendo algo")
+            return self.replace(playback_payload, origin=origin)
+
+        self.start(playback_payload, origin=origin)
+        return True
 
     def start(self, playback_payload: dict, *, origin: PlaybackOrigin) -> None:
         thread = threading.Thread(
             target=self._run_start,
-            args=(playback_payload, origin),
+            args=(playback_payload, origin, True),
         )
+        with self._thread_lock:
+            self._active_thread = thread
         thread.start()
 
     def replace(self, playback_payload: dict, *, origin: PlaybackOrigin) -> bool:
-        logger.warning(
-            "Ignoring active-playback replacement request until the clean "
-            "orchestrator replacement flow exists | origin=%s | payload=%s",
+        logger.info(
+            "Replacing active playback through normal finish/start flow | "
+            "origin=%s | payload=%s",
             origin.value,
             playback_payload,
         )
-        return False
+        with self._thread_lock:
+            if (
+                self._replacement_thread is not None
+                and self._replacement_thread.is_alive()
+            ):
+                logger.info(
+                    "Ignoring replacement request because another replacement "
+                    "is already in progress | origin=%s | payload=%s",
+                    origin.value,
+                    playback_payload,
+                )
+                return False
 
-    def _run_start(self, playback_payload: dict, origin: PlaybackOrigin) -> None:
-        print("Thread Play: starting")
-        self._start_orchestrated_playback(playback_payload, origin=origin)
-        self._reload_config()
-        print("Thread Play: finishing")
+            thread = threading.Thread(
+                target=self._run_replace,
+                args=(playback_payload, origin),
+            )
+            self._replacement_thread = thread
+
+        thread.start()
+        return True
+
+    def _run_start(
+        self,
+        playback_payload: dict,
+        origin: PlaybackOrigin,
+        restore_outputs_on_finish: bool = True,
+    ) -> None:
+        try:
+            print("Thread Play: starting")
+            self._last_playback_result = self._start_orchestrated_playback(
+                playback_payload,
+                origin=origin,
+                restore_outputs_on_finish=restore_outputs_on_finish,
+            )
+            self._reload_config()
+            print("Thread Play: finishing")
+        finally:
+            current_thread = threading.current_thread()
+            with self._thread_lock:
+                if self._active_thread is current_thread:
+                    self._active_thread = None
+
+    def _run_replace(self, playback_payload: dict, origin: PlaybackOrigin) -> None:
+        with self._thread_lock:
+            active_thread = self._active_thread
+
+        if active_thread is not None and active_thread.is_alive():
+            logger.info("Stopping active playback before replacement.")
+            self._replacement_requested.set()
+            try:
+                self._stop_active_playback()
+                active_thread.join()
+            finally:
+                self._replacement_requested.clear()
+
+            if (
+                self._last_playback_result is not None
+                and not self._last_playback_result.successful
+            ):
+                logger.warning(
+                    "Skipping replacement startup because active playback did not "
+                    "finish cleanly | successful=%s",
+                    self._last_playback_result.successful,
+                )
+                return
+
+        replacement_thread = threading.Thread(
+            target=self._run_start,
+            args=(playback_payload, origin, True),
+        )
+        with self._thread_lock:
+            self._active_thread = replacement_thread
+        replacement_thread.start()
+
+    def _is_duplicate_request(self, playback_payload: dict) -> bool:
+        return _bridge_playback_is_active(
+            self._playback_session.playstate
+        ) and is_same_media_item_request(
+            self._playback_session.currentdata,
+            playback_payload,
+        )
+
+    def _wait_for_loading_to_finish(self) -> None:
+        if self._playback_session.playstate not in ("Loading", "Replay"):
+            return
+
+        if self._playback_session.config.get("DebugLevel", 0) > 0:
+            print("Esta en la pantalla de Loading, tenemos que esperar")
+
+        timeout = 60
+        elapsed = 0
+        while self._playback_session.playstate == "Loading" and elapsed < timeout:
+            self._sleep(3)
+            elapsed = elapsed + 3
 
     def _start_orchestrated_playback(
         self,
         playback_payload: dict,
         *,
         origin: PlaybackOrigin,
-    ) -> None:
+        restore_outputs_on_finish: bool = True,
+    ):
         playback_session = self._playback_session
         startup_timer = PlaybackStartupTimer()
         playback_session.playstate = "Loading"
@@ -153,6 +289,7 @@ class PlaybackApplicationService:
             av_input_id=playback_session.config.get("AV_Input"),
             tv_enabled=playback_session.config.get("TV") is True,
             av_enabled=playback_session.config.get("AV") is True,
+            previous_tv_app_id_override=self._playback_return_tv_app_id,
         )
         playback_start_poll_interval = 0.5
 
@@ -228,7 +365,7 @@ class PlaybackApplicationService:
                     )
                 logger.info("Reprodución iniciada: %s", movie)
 
-            _log_oppo_qpl_state(playback_session.config, "after_playnormalfile")
+            _log_oppo_qpl_state(playback_session.config, "after_oppo_playback_start")
             startup_timer.log_summary()
 
         startup_completion_request = PlayMediaItemRequest(
@@ -251,6 +388,16 @@ class PlaybackApplicationService:
                     startup_completion_request=startup_completion_request,
                     is_paused=is_paused,
                     is_muted=is_muted,
+                    restore_outputs_on_finish=(
+                        restore_outputs_on_finish
+                        if not restore_outputs_on_finish
+                        else lambda: not self._replacement_requested.is_set()
+                    ),
+                    finish_idle_confirmation_polls=(
+                        lambda: REPLACEMENT_FINISH_IDLE_CONFIRMATION_POLLS
+                        if self._replacement_requested.is_set()
+                        else NORMAL_FINISH_IDLE_CONFIRMATION_POLLS
+                    ),
                     on_startup_waiting=notify_playback_waiting,
                     on_startup_completed=complete_legacy_startup_logging,
                 )
@@ -267,9 +414,35 @@ class PlaybackApplicationService:
             messages=messages,
             movie=movie,
         )
+        self._remember_playback_return_tv_app_id(playback_orchestration_result)
+        self._clear_playback_return_tv_app_id_after_final_finish(
+            playback_orchestration_result
+        )
 
         _power_down_after_playback_if_configured(playback_session.config)
         _reset_legacy_playback_session_state(playback_session, movie)
+        return playback_orchestration_result
+
+    def _remember_playback_return_tv_app_id(self, playback_orchestration_result) -> None:
+        startup_result = playback_orchestration_result.startup_result
+        output_switch_result = startup_result.output_switch_result
+        previous_tv_app_id = output_switch_result.previous_tv_app_id
+        if previous_tv_app_id is None or _is_lg_hdmi_app_id(previous_tv_app_id):
+            return
+
+        self._playback_return_tv_app_id = previous_tv_app_id
+
+    def _clear_playback_return_tv_app_id_after_final_finish(
+        self,
+        playback_orchestration_result,
+    ) -> None:
+        if self._replacement_requested.is_set():
+            return
+
+        if playback_orchestration_result.finish_result is None:
+            return
+
+        self._playback_return_tv_app_id = None
 
 
 def _playback_start_messages(lang: dict[str, str]) -> PlaybackStartMessages:
@@ -282,6 +455,29 @@ def _playback_start_messages(lang: dict[str, str]) -> PlaybackStartMessages:
         error_play=lang["x_msg_error_play"],
         error_no_oppo=lang["x_msg_error_no_oppo"],
     )
+
+
+def _bridge_playback_is_active(playstate: str) -> bool:
+    return playstate in BRIDGE_OWNED_PLAYBACK_STATES
+
+
+def _is_lg_hdmi_app_id(app_id: str) -> bool:
+    return app_id.startswith("com.webos.app.hdmi")
+
+
+def _stop_active_player_playback_before_replacement(playback_session) -> None:
+    command = _active_player_stop_command_for_replacement(playback_session)
+    filename = getattr(playback_session, "filename", "")
+    logger.info(
+        "Stopping active OPPO playback before replacement | command=%s | filename=%s",
+        command,
+        filename,
+    )
+    OppoControlApiClient.from_config(playback_session.config).send_remote_key(command)
+
+
+def _active_player_stop_command_for_replacement(playback_session) -> str:
+    return "STP"
 
 
 def _ensure_oppo_control_api_available(config: dict[str, Any]) -> bool:
@@ -323,21 +519,20 @@ def _send_playback_message(
     message: str,
     timeout_ms: int | None = None,
 ) -> None:
-    if origin == PlaybackOrigin.OBSERVED_TV_CLIENT:
+    target_session_id = params.get("Session_id")
+    if target_session_id:
         if timeout_ms is None:
-            playback_session.send_message2(params["Session_id"], message)
+            playback_session.send_message2(target_session_id, message)
         else:
-            playback_session.send_message2(params["Session_id"], message, timeout_ms)
+            playback_session.send_message2(target_session_id, message, timeout_ms)
         return
 
-    if timeout_ms is None:
-        playback_session.send_user_message(params["ControllingUserId"], message)
-    else:
-        playback_session.send_user_message(
-            params["ControllingUserId"],
-            message,
-            timeout_ms,
-        )
+    logger.info(
+        "Skipping playback message; no active source session is available | "
+        "origin=%s | text=%s",
+        origin.value,
+        message,
+    )
 
 
 def _handle_orchestration_result(
@@ -421,9 +616,10 @@ def _handle_orchestration_result(
         playback_monitoring_result.duration_seconds,
     )
     logger.info(
-        "Playback finish result | successful=%s | tv=%s | av_audio=%s | "
-        "final_state=%s | category=%s",
+        "Playback finish result | successful=%s | player_idle=%s | tv=%s | "
+        "av_audio=%s | final_state=%s | category=%s",
         finish_result.successful,
+        finish_result.player_idle_result.status.value,
         finish_result.tv_app_result.status.value,
         finish_result.av_audio_result.status.value,
         finish_result.final_player_state.status.value,

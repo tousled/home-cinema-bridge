@@ -5,7 +5,11 @@ from dataclasses import dataclass
 
 from home_cinema_bridge.devices.av.factory import create_av_receiver
 from home_cinema_bridge.devices.tv.factory import create_tv_controller
-from home_cinema_bridge.playback.ports import AvReceiverOutputPort, TelevisionOutputPort
+from home_cinema_bridge.playback.ports import (
+    AvReceiverOutputPort,
+    OppoPlaybackPort,
+    TelevisionOutputPort,
+)
 from home_cinema_bridge.playback.startup.device_output_adapters import (
     LegacyAvReceiverOutput,
     LegacyTelevisionOutput,
@@ -28,12 +32,15 @@ class PlaybackErrorRecoveryRequest:
 
 @dataclass(frozen=True)
 class PlaybackErrorRecoveryResult:
+    player_stop_result: DeviceCommandResult
     tv_app_result: DeviceCommandResult
     av_audio_result: DeviceCommandResult
 
     @property
     def successful(self) -> bool:
         return (
+            self.player_stop_result.status != DeviceCommandStatus.FAILED
+            and
             self.tv_app_result.status != DeviceCommandStatus.FAILED
             and self.av_audio_result.status != DeviceCommandStatus.FAILED
         )
@@ -47,9 +54,11 @@ class PlaybackErrorHandler:
         *,
         television: TelevisionOutputPort,
         av_receiver: AvReceiverOutputPort | None,
+        oppo_playback: OppoPlaybackPort | None = None,
     ) -> None:
         self._television = television
         self._av_receiver = av_receiver
+        self._oppo_playback = oppo_playback
 
     def recover(self, request: PlaybackErrorRecoveryRequest) -> PlaybackErrorRecoveryResult:
         logger.warning(
@@ -61,20 +70,37 @@ class PlaybackErrorHandler:
             request.av_enabled,
         )
 
+        player_stop_result = self._stop_player_playback()
         tv_app_result = self._return_tv_to_app(request)
         av_audio_result = self._restore_av_tv_audio(request)
         result = PlaybackErrorRecoveryResult(
+            player_stop_result=player_stop_result,
             tv_app_result=tv_app_result,
             av_audio_result=av_audio_result,
         )
 
         logger.info(
-            "Playback error recovery result | successful=%s | tv=%s | av_audio=%s",
+            "Playback error recovery result | successful=%s | player_stop=%s | "
+            "tv=%s | av_audio=%s",
             result.successful,
+            player_stop_result.status.value,
             tv_app_result.status.value,
             av_audio_result.status.value,
         )
         return result
+
+    def _stop_player_playback(self) -> DeviceCommandResult:
+        if self._oppo_playback is None:
+            return DeviceCommandResult.skipped("No OPPO playback adapter configured.")
+
+        logger.info("Stopping OPPO playback during error recovery.")
+        try:
+            return self._oppo_playback.stop_playback()
+        except Exception as exc:
+            logger.exception("Unable to stop OPPO playback during error recovery.")
+            return DeviceCommandResult.failed(
+                f"OPPO playback stop failed: {type(exc).__name__}: {exc}"
+            )
 
     def _return_tv_to_app(
         self,
@@ -103,8 +129,13 @@ class PlaybackErrorHandler:
         return self._av_receiver.restore_tv_audio()
 
 
-def create_playback_error_handler(config: dict) -> PlaybackErrorHandler:
+def create_playback_error_handler(
+    config: dict,
+    *,
+    oppo_playback: OppoPlaybackPort | None = None,
+) -> PlaybackErrorHandler:
     return PlaybackErrorHandler(
         television=LegacyTelevisionOutput(create_tv_controller(config)),
         av_receiver=LegacyAvReceiverOutput(create_av_receiver(config)),
+        oppo_playback=oppo_playback,
     )

@@ -19,7 +19,9 @@ from websocket import WebSocketApp
 import logging
 import json
 from .Emby_http import EmbyHttp
-from .Xnoppo import *
+from home_cinema_bridge.media_servers.emby.playback_command_handler import (
+    EmbyPlaybackCommandHandler,
+)
 from home_cinema_bridge.media_servers.emby.session_events import (
     build_playback_intent_from_session,
     describe_session_playback_source,
@@ -52,6 +54,8 @@ class XnoppoWs(threading.Thread):
     def __init__(self):
 
         self.emby_state='Init'
+        self.playback_application_service = None
+        self.playback_command_handler = None
         threading.Thread.__init__(self)
         logging.info('Ws:Fin init\n')
 
@@ -106,47 +110,10 @@ class XnoppoWs(threading.Thread):
         return(config)
 
     def _play(self, data):
-        command = data['PlayCommand']
-        if command == 'PlayNow':
-            logging.info(
-                "Emby websocket play command | command=%s | item_ids=%s | "
-                "start_position_present=%s | start_position_ticks=%s | "
-                "saved_position_ticks=%s | media_source_id=%s | "
-                "audio_stream_index=%s | subtitle_stream_index=%s | "
-                "device=%s",
-                command,
-                data.get("ItemIds"),
-                "StartPositionTicks" in data,
-                data.get("StartPositionTicks"),
-                data.get("SavedPlaybackPositionTicks"),
-                data.get("MediaSourceId"),
-                data.get("AudioStreamIndex"),
-                data.get("SubtitleStreamIndex"),
-                data.get("DeviceName"),
-            )
-            # Play commands still use the legacy payload shape until the direct
-            # command path is moved behind the same playback intent boundary.
-            self._playback_intent_dispatcher().dispatch_legacy_payload(
-                data,
-                origin=PlaybackOrigin.REMOTE_CONTROL_COMMAND,
-            )
+        self.playback_command_handler.handle_play(data)
 
     def _general_commands(self,data):
-        cmd = data['Name']
-        args = data['Arguments']
-        #print(cmd)
-        #print(args)
-        if cmd == 'SetAudioStreamIndex':
-            params = self.EmbySession.process_data(self.EmbySession.currentdata)
-            audio_index = self.EmbySession.get_xnoppo_audio_index(params["ControllingUserId"],params["item_id"],int(args['Index']))
-            setaudiotrack(self.ws_config,audio_index)
-            self.EmbySession.currentdata["AudioStreamIndex"]=int(args['Index'])
-        elif cmd == 'SetSubtitleStreamIndex':
-            params = self.EmbySession.process_data(self.EmbySession.currentdata)
-            subs_index = self.EmbySession.get_xnoppo_subs_index(params["ControllingUserId"],params["item_id"],int(args['Index']))
-            set_subtitles_track(self.ws_config, subs_index)
-            self.EmbySession.currentdata["SubtitleStreamIndex"]=int(args['Index'])
-        #elif cmd == 'SetVolume'
+        self.playback_command_handler.handle_general_command(data)
 
     def _check_state(self, data, sessions):
         if self.ws_config["MonitoredDevice"]:
@@ -345,37 +312,12 @@ class XnoppoWs(threading.Thread):
                     self.MonitoredState = ''
 
     def _playback_intent_dispatcher(self):
-        playback_application_service = PlaybackApplicationService(
-            playback_session=self.EmbySession,
-            reload_config=self.reload_config,
-        )
         return PlaybackIntentDispatcher(
-            legacy_playback_session=self.EmbySession,
-            playback_application_service=playback_application_service,
-            debug_level=self.ws_config.get("DebugLevel", 0),
+            playback_application_service=self.playback_application_service,
         )
 
     def _playstate(self, data):
-        command = data['Command']
-        if command == 'Stop':
-            sendremotekey('HOM',self.ws_config)
-        elif command == 'Pause':
-            sendremotekey('PAU',self.ws_config)
-        elif command == 'Unpause':
-            sendremotekey('PLA',self.ws_config)
-        elif command == 'NextTrack':
-            sendremotekey('NXT',self.ws_config)
-        elif command == 'PreviousTrack':
-            sendremotekey('PRE',self.ws_config)
-        elif command == 'Seek':
-            playticks=data["SeekPositionTicks"]
-            setplaytime(self.ws_config,playticks)
-        elif command == 'Rewind':
-            sendremotekey('REV',self.ws_config)
-        elif command == 'FastForward':
-            sendremotekey('FWD',self.ws_config)
-        elif command == 'PlayPause':
-            sendremotekey('PAU',self.ws_config)
+        self.playback_command_handler.handle_playstate(data)
 
     def on_message(self, ws, msg):
         msg_json = json.loads(msg)
@@ -432,6 +374,15 @@ class XnoppoWs(threading.Thread):
         self.EmbySession.lang=self.ws_lang
         self.ws_user_info = self.EmbySession.user_info
         self.EmbySession.set_capabilities()
+        self.playback_application_service = PlaybackApplicationService(
+            playback_session=self.EmbySession,
+            reload_config=self.reload_config,
+        )
+        self.playback_command_handler = EmbyPlaybackCommandHandler(
+            emby_session=self.EmbySession,
+            config_provider=lambda: self.ws_config,
+            playback_intent_dispatcher_factory=self._playback_intent_dispatcher,
+        )
         uri = self.ws_config["emby_server"].replace('http://', 'ws://').replace('https://', 'wss://')
         uri = uri + '/?api_key=' + self.ws_user_info["AccessToken"] + '&deviceId=''Xnoppo'''
         #uri = uri + '/?api_key=' + self.ws_user_info["AccessToken"] + '&deviceId={}'

@@ -41,13 +41,25 @@ class RecordingAvReceiverOutput:
         return DeviceCommandResult.success("tv audio restored")
 
 
+class RecordingOppoPlayback:
+    def __init__(self, result=None):
+        self.calls = []
+        self.result = result or DeviceCommandResult.success("oppo stopped")
+
+    def stop_playback(self):
+        self.calls.append("stop_playback")
+        return self.result
+
+
 class PlaybackErrorHandlerTest(unittest.TestCase):
-    def test_recovers_tv_app_and_av_audio(self):
+    def test_stops_player_and_recovers_tv_app_and_av_audio(self):
         television = RecordingTelevisionOutput()
         av_receiver = RecordingAvReceiverOutput()
+        oppo = RecordingOppoPlayback()
         handler = PlaybackErrorHandler(
             television=television,
             av_receiver=av_receiver,
+            oppo_playback=oppo,
         )
 
         result = handler.recover(
@@ -60,15 +72,18 @@ class PlaybackErrorHandlerTest(unittest.TestCase):
         )
 
         self.assertTrue(result.successful)
+        self.assertEqual(["stop_playback"], oppo.calls)
         self.assertEqual([("return_to_app", "com.emby.app")], television.calls)
         self.assertEqual(["restore_tv_audio"], av_receiver.calls)
 
     def test_recovery_skips_disabled_outputs(self):
         television = RecordingTelevisionOutput()
         av_receiver = RecordingAvReceiverOutput()
+        oppo = RecordingOppoPlayback()
         handler = PlaybackErrorHandler(
             television=television,
             av_receiver=av_receiver,
+            oppo_playback=oppo,
         )
 
         result = handler.recover(
@@ -81,6 +96,7 @@ class PlaybackErrorHandlerTest(unittest.TestCase):
         )
 
         self.assertTrue(result.successful)
+        self.assertEqual(["stop_playback"], oppo.calls)
         self.assertEqual([], television.calls)
         self.assertEqual([], av_receiver.calls)
 

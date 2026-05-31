@@ -7,22 +7,13 @@ from home_cinema_bridge.playback.dispatch import (
 from home_cinema_bridge.playback.intent import PlaybackIntent, PlaybackOrigin
 
 
-class FakeLegacyPlaybackSession:
-    def __init__(self, *, playstate="Free", currentdata=None):
-        self.playstate = playstate
-        self.currentdata = currentdata
-
-
 class RecordingPlaybackApplicationService:
     def __init__(self):
         self.calls = []
 
-    def start(self, playback_payload, *, origin):
-        self.calls.append(("start", playback_payload, origin))
-
-    def replace(self, playback_payload, *, origin):
-        self.calls.append(("replace", playback_payload, origin))
-        return False
+    def request_playback(self, playback_payload, *, origin):
+        self.calls.append(("request_playback", playback_payload, origin))
+        return True
 
 
 class PlaybackDispatchTest(unittest.TestCase):
@@ -32,16 +23,10 @@ class PlaybackDispatchTest(unittest.TestCase):
         self.assertTrue(bridge_playback_is_active("Replay"))
         self.assertFalse(bridge_playback_is_active("Free"))
 
-    def test_ignores_duplicate_intent_for_current_item(self):
-        session = FakeLegacyPlaybackSession(
-            playstate="Playing",
-            currentdata={"ItemIds": [11136]},
-        )
+    def test_dispatches_intent_to_application_playback_flow(self):
         playback_service = RecordingPlaybackApplicationService()
         dispatcher = PlaybackIntentDispatcher(
-            legacy_playback_session=session,
             playback_application_service=playback_service,
-            sleep=lambda seconds: None,
         )
 
         dispatched = dispatcher.dispatch(
@@ -49,44 +34,18 @@ class PlaybackDispatchTest(unittest.TestCase):
             origin=PlaybackOrigin.OBSERVED_TV_CLIENT,
         )
 
-        self.assertFalse(dispatched)
-        self.assertEqual([], playback_service.calls)
-
-    def test_ignores_another_item_during_playback_until_replacement_flow_exists(self):
-        session = FakeLegacyPlaybackSession(
-            playstate="Playing",
-            currentdata={"ItemIds": [11136]},
-        )
-        playback_service = RecordingPlaybackApplicationService()
-        dispatcher = PlaybackIntentDispatcher(
-            legacy_playback_session=session,
-            playback_application_service=playback_service,
-            sleep=lambda seconds: None,
-        )
-
-        dispatched = dispatcher.dispatch(
-            _intent(media_item_id="22222"),
-            origin=PlaybackOrigin.OBSERVED_TV_CLIENT,
-        )
-
-        self.assertFalse(dispatched)
-        self.assertEqual("replace", playback_service.calls[0][0])
-        self.assertEqual([22222], playback_service.calls[0][1]["ItemIds"])
+        self.assertTrue(dispatched)
+        self.assertEqual("request_playback", playback_service.calls[0][0])
+        self.assertEqual([11136], playback_service.calls[0][1]["ItemIds"])
         self.assertEqual(
             PlaybackOrigin.OBSERVED_TV_CLIENT,
             playback_service.calls[0][2],
         )
 
     def test_direct_legacy_payload_uses_same_switching_rules(self):
-        session = FakeLegacyPlaybackSession(
-            playstate="Playing",
-            currentdata={"ItemIds": [11136]},
-        )
         playback_service = RecordingPlaybackApplicationService()
         dispatcher = PlaybackIntentDispatcher(
-            legacy_playback_session=session,
             playback_application_service=playback_service,
-            sleep=lambda seconds: None,
         )
 
         dispatched = dispatcher.dispatch_legacy_payload(
@@ -94,8 +53,8 @@ class PlaybackDispatchTest(unittest.TestCase):
             origin=PlaybackOrigin.REMOTE_CONTROL_COMMAND,
         )
 
-        self.assertFalse(dispatched)
-        self.assertEqual("replace", playback_service.calls[0][0])
+        self.assertTrue(dispatched)
+        self.assertEqual("request_playback", playback_service.calls[0][0])
         self.assertEqual(
             PlaybackOrigin.REMOTE_CONTROL_COMMAND,
             playback_service.calls[0][2],

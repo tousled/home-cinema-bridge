@@ -125,7 +125,87 @@ class PlaybackOrchestratorTest(unittest.TestCase):
         self.assertEqual(42, during.requests[0].initial_position_seconds)
         self.assertEqual(1, len(finish.requests))
         self.assertEqual(1, finish.requests[0].position_seconds)
+        self.assertTrue(finish.requests[0].tv_enabled)
+        self.assertTrue(finish.requests[0].av_enabled)
+        self.assertEqual(5, finish.requests[0].max_idle_confirmation_polls)
         self.assertEqual([], error_handler.requests)
+
+    def test_can_skip_output_restore_on_finish_for_replacement(self):
+        startup_result = _startup_result(successful=True)
+        startup = RecordingStartupOrchestrator(startup_result)
+        finish = RecordingFinishPlaybackOrchestrator(_finish_result())
+        orchestrator = PlaybackOrchestrator(
+            startup_orchestrator=startup,
+            startup_completion_service=RecordingStartupCompletionService(),
+            during_playback_orchestrator=RecordingDuringPlaybackOrchestrator(
+                _monitoring_result()
+            ),
+            finish_playback_orchestrator=finish,
+            error_handler=RecordingErrorHandler(),
+        )
+
+        result = orchestrator.play_until_stopped(
+            PlaybackOrchestrationRequest(
+                startup_request=_startup_request(),
+                startup_completion_request=_startup_completion_request(),
+                restore_outputs_on_finish=False,
+            )
+        )
+
+        self.assertTrue(result.successful)
+        self.assertFalse(finish.requests[0].tv_enabled)
+        self.assertFalse(finish.requests[0].av_enabled)
+
+    def test_can_use_longer_idle_confirmation_for_replacement_finish(self):
+        startup_result = _startup_result(successful=True)
+        finish = RecordingFinishPlaybackOrchestrator(_finish_result())
+        orchestrator = PlaybackOrchestrator(
+            startup_orchestrator=RecordingStartupOrchestrator(startup_result),
+            startup_completion_service=RecordingStartupCompletionService(),
+            during_playback_orchestrator=RecordingDuringPlaybackOrchestrator(
+                _monitoring_result()
+            ),
+            finish_playback_orchestrator=finish,
+            error_handler=RecordingErrorHandler(),
+        )
+
+        result = orchestrator.play_until_stopped(
+            PlaybackOrchestrationRequest(
+                startup_request=_startup_request(),
+                startup_completion_request=_startup_completion_request(),
+                finish_idle_confirmation_polls=lambda: 60,
+            )
+        )
+
+        self.assertTrue(result.successful)
+        self.assertEqual(60, finish.requests[0].max_idle_confirmation_polls)
+
+    def test_output_restore_on_finish_can_be_resolved_late(self):
+        startup_result = _startup_result(successful=True)
+        startup = RecordingStartupOrchestrator(startup_result)
+        finish = RecordingFinishPlaybackOrchestrator(_finish_result())
+        restore_outputs = False
+        orchestrator = PlaybackOrchestrator(
+            startup_orchestrator=startup,
+            startup_completion_service=RecordingStartupCompletionService(),
+            during_playback_orchestrator=RecordingDuringPlaybackOrchestrator(
+                _monitoring_result()
+            ),
+            finish_playback_orchestrator=finish,
+            error_handler=RecordingErrorHandler(),
+        )
+
+        result = orchestrator.play_until_stopped(
+            PlaybackOrchestrationRequest(
+                startup_request=_startup_request(),
+                startup_completion_request=_startup_completion_request(),
+                restore_outputs_on_finish=lambda: restore_outputs,
+            )
+        )
+
+        self.assertTrue(result.successful)
+        self.assertFalse(finish.requests[0].tv_enabled)
+        self.assertFalse(finish.requests[0].av_enabled)
 
     def test_startup_failure_recovers_and_does_not_monitor_playback(self):
         startup_result = _startup_result(successful=False)
@@ -257,6 +337,11 @@ def _monitoring_result():
 def _finish_result(*, successful=True):
     return PlaybackFinishResult(
         media_server_stop_result=None,
+        player_idle_result=(
+            DeviceCommandResult.success()
+            if successful
+            else DeviceCommandResult.failed("oppo not idle")
+        ),
         tv_app_result=(
             DeviceCommandResult.success()
             if successful
@@ -285,6 +370,7 @@ def _recovery_result():
     from home_cinema_bridge.playback.error_handling import PlaybackErrorRecoveryResult
 
     return PlaybackErrorRecoveryResult(
+        player_stop_result=DeviceCommandResult.success(),
         tv_app_result=DeviceCommandResult.success(),
         av_audio_result=DeviceCommandResult.success(),
     )

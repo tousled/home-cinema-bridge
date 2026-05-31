@@ -89,6 +89,7 @@ class FinishPlaybackOrchestratorTest(unittest.TestCase):
         )
 
         self.assertTrue(result.successful)
+        self.assertEqual(DeviceCommandStatus.SUCCESS, result.player_idle_result.status)
         self.assertEqual(2, oppo.state_calls)
         self.assertEqual(
             OppoPlaybackStatus.MEDIA_CENTER,
@@ -130,6 +131,7 @@ class FinishPlaybackOrchestratorTest(unittest.TestCase):
         )
 
         self.assertTrue(result.successful)
+        self.assertEqual(DeviceCommandStatus.SUCCESS, result.player_idle_result.status)
         self.assertEqual(0, oppo.state_calls)
 
     def test_skips_disabled_outputs(self):
@@ -159,10 +161,11 @@ class FinishPlaybackOrchestratorTest(unittest.TestCase):
 
         self.assertEqual(DeviceCommandStatus.SKIPPED, result.tv_app_result.status)
         self.assertEqual(DeviceCommandStatus.SKIPPED, result.av_audio_result.status)
+        self.assertEqual(DeviceCommandStatus.SUCCESS, result.player_idle_result.status)
         self.assertEqual([], television.returned_app_ids)
         self.assertEqual(0, av_receiver.restore_calls)
 
-    def test_continues_finish_when_idle_confirmation_fails(self):
+    def test_reports_unsuccessful_finish_when_idle_confirmation_fails(self):
         stop_reporter = RecordingStopReporter()
         television = RecordingTelevision()
         orchestrator = FinishPlaybackOrchestrator(
@@ -185,9 +188,42 @@ class FinishPlaybackOrchestratorTest(unittest.TestCase):
             )
         )
 
-        self.assertTrue(result.successful)
+        self.assertFalse(result.successful)
+        self.assertEqual(DeviceCommandStatus.FAILED, result.player_idle_result.status)
         self.assertEqual(1, len(stop_reporter.calls))
         self.assertEqual(["com.emby.app"], television.returned_app_ids)
+
+    def test_reports_unsuccessful_finish_when_oppo_never_reaches_idle(self):
+        stop_reporter = RecordingStopReporter()
+        orchestrator = FinishPlaybackOrchestrator(
+            stopped_reporter=stop_reporter,
+            television=RecordingTelevision(),
+            av_receiver=RecordingAvReceiver(),
+            oppo_playback=RecordingOppoPlayback(
+                [
+                    _state(OppoPlaybackStatus.OPEN, OppoPlaybackCategory.TRANSITION),
+                    _state(OppoPlaybackStatus.OPEN, OppoPlaybackCategory.TRANSITION),
+                ]
+            ),
+            sleep=lambda seconds: None,
+        )
+
+        result = orchestrator.finish(
+            PlaybackFinishRequest(
+                position_seconds=10,
+                duration_seconds=100,
+                final_player_state=_state(
+                    OppoPlaybackStatus.OPEN,
+                    OppoPlaybackCategory.TRANSITION,
+                ),
+                previous_tv_app_id="com.emby.app",
+                max_idle_confirmation_polls=2,
+            )
+        )
+
+        self.assertFalse(result.successful)
+        self.assertEqual(DeviceCommandStatus.FAILED, result.player_idle_result.status)
+        self.assertEqual(1, len(stop_reporter.calls))
 
 
 def _state(status, category):

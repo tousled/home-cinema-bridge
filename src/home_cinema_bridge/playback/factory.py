@@ -68,7 +68,10 @@ def create_playback_orchestrator_wiring(
         startup_completion_service=startup_completion_service,
         during_playback_orchestrator=during_playback_orchestrator,
         finish_playback_orchestrator=finish_playback_orchestrator,
-        error_handler=create_playback_error_handler(config),
+        error_handler=create_playback_error_handler(
+            config,
+            oppo_playback=startup_wiring.oppo_playback,
+        ),
     )
 
     return PlaybackOrchestratorWiring(

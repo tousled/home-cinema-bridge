@@ -457,63 +457,6 @@ def setaudiotrack(config, audio_index):
     return response_text
 
 
-def apply_selected_subtitle_track(
-    emby_session,
-    params,
-    startup_timer=None,
-    startup_orchestrator=None,
-):
-    logging.debug("apply_selected_subtitle_track")
-    try:
-        subtitle_stream_index = params.get("subtitle_stream_index")
-
-        if subtitle_stream_index is not None and int(subtitle_stream_index) >= 0:
-            if emby_session.config["DebugLevel"] > 0:
-                print("llamamos a set_subtitles_track")
-                print(subtitle_stream_index)
-
-            if startup_timer is not None:
-                with startup_timer.measure_step("subtitle_resolve_emby_to_oppo_index"):
-                    subs_index = emby_session.get_xnoppo_subs_index(
-                        params["ControllingUserId"],
-                        params["item_id"],
-                        subtitle_stream_index,
-                    )
-            else:
-                subs_index = emby_session.get_xnoppo_subs_index(
-                    params["ControllingUserId"],
-                    params["item_id"],
-                    subtitle_stream_index,
-                )
-
-            if subs_index is not None and int(subs_index) >= 0:
-                if startup_timer is not None:
-                    with startup_timer.measure_step("subtitle_set_oppo_track"):
-                        if startup_orchestrator is None:
-                            set_subtitles_track(
-                                emby_session.config,
-                                subs_index,
-                                startup_timer=startup_timer,
-                            )
-                        else:
-                            startup_orchestrator.select_oppo_subtitle_track(subs_index)
-                else:
-                    if startup_orchestrator is None:
-                        set_subtitles_track(emby_session.config, subs_index)
-                    else:
-                        startup_orchestrator.select_oppo_subtitle_track(subs_index)
-
-            elif emby_session.config["DebugLevel"] > 0:
-                print("No valid OPPO subtitle index found")
-
-        elif emby_session.config["DebugLevel"] > 0:
-            print("No subtitle selected; skipping subtitle track selection")
-
-    except:
-        if emby_session.config["DebugLevel"] > 0:
-            print("Error indicando el subtitulo")
-
-
 def set_subtitles_track(config, subs_index, startup_timer=None):
     logging.debug("set_subtitles_track")
 

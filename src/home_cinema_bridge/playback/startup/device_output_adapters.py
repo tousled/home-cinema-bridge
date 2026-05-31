@@ -23,15 +23,15 @@ from home_cinema_bridge.playback.ports import (
     TelevisionOutputPort,
     OppoPlaybackPort,
 )
+from lib.devices.oppo.control_api_client import OppoControlApiClient
 from lib.devices.oppo.playback_status_client import OppoPlaybackStatusClient
 
 logger = logging.getLogger(__name__)
 
 
 @deprecated(
-    "LegacyTelevisionOutput is a temporary bridge while Xnoppo.py still owns "
-    "startup wiring. Replace it with a direct TV adapter port when the legacy "
-    "entrypoint is removed."
+    "LegacyTelevisionOutput is a temporary bridge while TV startup wiring still "
+    "uses config-based adapters. Replace it with a direct TV adapter port."
 )
 class LegacyTelevisionOutput(TelevisionOutputPort):
     """
@@ -91,9 +91,9 @@ class LegacyTelevisionOutput(TelevisionOutputPort):
 
 
 @deprecated(
-    "LegacyAvReceiverOutput is a temporary bridge while Xnoppo.py still owns "
-    "startup wiring. Replace it with a direct AV receiver adapter port when the "
-    "legacy entrypoint is removed."
+    "LegacyAvReceiverOutput is a temporary bridge while AV startup wiring still "
+    "uses config-based adapters. Replace it with a direct AV receiver adapter "
+    "port."
 )
 class LegacyAvReceiverOutput(AvReceiverOutputPort):
     """
@@ -204,7 +204,16 @@ class LegacyOppoMediaControlPlaybackOutput(OppoPlaybackPort):
         return self._playback.select_subtitle_track(subtitle_index)
 
     def stop_playback(self) -> DeviceCommandResult:
-        raise NotImplementedError
+        try:
+            response = OppoControlApiClient.from_config(self._config).send_remote_key(
+                "STP"
+            )
+            return DeviceCommandResult.success(f"OPPO playback stop sent: {response}")
+        except Exception as exc:
+            logger.exception("Unable to stop OPPO playback.")
+            return DeviceCommandResult.failed(
+                f"OPPO playback stop failed: {type(exc).__name__}: {exc}"
+            )
 
     def _playback_status_client(self) -> OppoPlaybackStatusClient:
         player_host = self._config["Oppo_IP"]
@@ -219,7 +228,7 @@ class LegacyOppoMediaControlPlaybackOutput(OppoPlaybackPort):
 
 @deprecated(
     "_run exists only because the current legacy TV adapter exposes async methods "
-    "to synchronous Xnoppo.py startup code."
+    "to synchronous startup orchestration."
 )
 def _run(coroutine: Any) -> Any:
     return asyncio.run(coroutine)

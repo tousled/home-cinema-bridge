@@ -52,7 +52,7 @@ class FinishPlaybackOrchestrator:
         self._sleep = sleep
 
     def finish(self, request: PlaybackFinishRequest) -> PlaybackFinishResult:
-        final_player_state = self._confirm_idle_state(request)
+        final_player_state, player_idle_result = self._confirm_idle_state(request)
         media_server_stop_result = self._stopped_reporter.stopped(
             position_seconds=request.position_seconds,
             duration_seconds=request.duration_seconds,
@@ -73,6 +73,7 @@ class FinishPlaybackOrchestrator:
 
         return PlaybackFinishResult(
             media_server_stop_result=media_server_stop_result,
+            player_idle_result=player_idle_result,
             tv_app_result=tv_app_result,
             av_audio_result=av_audio_result,
             final_player_state=final_player_state,
@@ -81,10 +82,10 @@ class FinishPlaybackOrchestrator:
     def _confirm_idle_state(
         self,
         request: PlaybackFinishRequest,
-    ) -> OppoPlaybackState:
+    ) -> tuple[OppoPlaybackState, DeviceCommandResult]:
         state = request.final_player_state
         if state.category == OppoPlaybackCategory.IDLE:
-            return state
+            return state, DeviceCommandResult.success("OPPO already idle.")
 
         if self._oppo_playback is None:
             logger.info(
@@ -93,20 +94,24 @@ class FinishPlaybackOrchestrator:
                 state.status.value,
                 state.category.value,
             )
-            return state
+            return state, DeviceCommandResult.skipped(
+                "No OPPO playback adapter configured for idle confirmation."
+            )
 
         for poll_number in range(1, request.max_idle_confirmation_polls + 1):
             self._sleep(request.idle_confirmation_poll_interval_seconds)
             try:
                 state = self._oppo_playback.get_playback_state()
-            except Exception:
+            except Exception as exc:
                 logger.exception(
                     "Unable to confirm OPPO idle state during playback finish; "
                     "continuing with last known state | state=%s | category=%s",
                     state.status.value,
                     state.category.value,
                 )
-                return state
+                return state, DeviceCommandResult.failed(
+                    f"OPPO idle confirmation failed: {type(exc).__name__}: {exc}"
+                )
 
             logger.info(
                 "OPPO finish idle confirmation | poll=%s | state=%s | category=%s",
@@ -116,7 +121,9 @@ class FinishPlaybackOrchestrator:
             )
 
             if state.category == OppoPlaybackCategory.IDLE:
-                return state
+                return state, DeviceCommandResult.success(
+                    "OPPO idle state confirmed."
+                )
 
         logger.warning(
             "OPPO did not report idle before finish continuation | state=%s | "
@@ -124,7 +131,9 @@ class FinishPlaybackOrchestrator:
             state.status.value,
             state.category.value,
         )
-        return state
+        return state, DeviceCommandResult.failed(
+            "OPPO did not report idle before finish continuation."
+        )
 
     def _return_tv_to_app(
         self,

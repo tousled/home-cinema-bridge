@@ -40,6 +40,8 @@ class PlaybackOrchestrationRequest:
     startup_completion_request: PlayMediaItemRequest
     is_paused: bool = False
     is_muted: bool = False
+    restore_outputs_on_finish: bool | Callable[[], bool] = True
+    finish_idle_confirmation_polls: int | Callable[[], int] = 5
     on_startup_waiting: Callable[[int], None] | None = None
     on_startup_completed: Callable[[OppoPlaybackStartResult], None] | None = None
 
@@ -139,6 +141,10 @@ class PlaybackOrchestrator:
         )
 
         try:
+            restore_outputs_on_finish = _resolve_restore_outputs_on_finish(request)
+            finish_idle_confirmation_polls = (
+                _resolve_finish_idle_confirmation_polls(request)
+            )
             finish_result = self._finish_playback_orchestrator.finish(
                 PlaybackFinishRequest(
                     position_seconds=monitoring_result.position_seconds,
@@ -148,11 +154,14 @@ class PlaybackOrchestrator:
                         startup_result.output_switch_result.previous_tv_app_id
                     ),
                     tv_enabled=(
-                        request.startup_request.output_switch_request.tv_enabled
+                        restore_outputs_on_finish
+                        and request.startup_request.output_switch_request.tv_enabled
                     ),
                     av_enabled=(
-                        request.startup_request.output_switch_request.av_enabled
+                        restore_outputs_on_finish
+                        and request.startup_request.output_switch_request.av_enabled
                     ),
+                    max_idle_confirmation_polls=finish_idle_confirmation_polls,
                     is_paused=request.is_paused,
                     is_muted=request.is_muted,
                 )
@@ -170,9 +179,10 @@ class PlaybackOrchestrator:
                 error_recovery_result=recovery_result,
             )
         logger.info(
-            "Playback finish completed | successful=%s | tv=%s | av_audio=%s | "
-            "final_state=%s | category=%s",
+            "Playback finish completed | successful=%s | player_idle=%s | "
+            "tv=%s | av_audio=%s | final_state=%s | category=%s",
             finish_result.successful,
+            finish_result.player_idle_result.status.value,
             finish_result.tv_app_result.status.value,
             finish_result.av_audio_result.status.value,
             finish_result.final_player_state.status.value,
@@ -237,3 +247,23 @@ class PlaybackOrchestrator:
             playback_state.category.value if playback_state is not None else None,
             oppo_start_result.detail,
         )
+
+
+def _resolve_restore_outputs_on_finish(
+    request: PlaybackOrchestrationRequest,
+) -> bool:
+    restore_outputs = request.restore_outputs_on_finish
+    if callable(restore_outputs):
+        return bool(restore_outputs())
+
+    return bool(restore_outputs)
+
+
+def _resolve_finish_idle_confirmation_polls(
+    request: PlaybackOrchestrationRequest,
+) -> int:
+    polls = request.finish_idle_confirmation_polls
+    if callable(polls):
+        return max(0, int(polls()))
+
+    return max(0, int(polls))
