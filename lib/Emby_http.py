@@ -274,14 +274,26 @@ class EmbyHttp(threading.Thread):
         url2 = ('{server}/emby/Users/' + str(user_id) + '/Items/' + str(item_id))
         response_data_item = self.get_ulr_data(url2, self.config, self.user_info)
         item_list_data = json.loads(response_data_item)
-        logging.debug('Item List Data %s',item_list_data)
+        logging.debug(
+            "Item data loaded | item_id=%s | name=%s | type=%s | path=%s | streams=%s",
+            item_id,
+            item_list_data.get("Name"),
+            item_list_data.get("Type"),
+            item_list_data.get("Path"),
+            len(item_list_data.get("MediaStreams", [])),
+        )
         return item_list_data
 
     def get_item_info2(self,user_id,item_id,mediasource_id):
         url2 = ('{server}/emby/Users/' + str(user_id) + '/Items/' + str(item_id))
         response_data_item = self.get_ulr_data(url2, self.config, self.user_info)
         item_list_data = json.loads(response_data_item)
-        logging.debug('Item List Data %s',item_list_data)
+        logging.debug(
+            "Item media sources loaded | item_id=%s | name=%s | media_sources=%s",
+            item_id,
+            item_list_data.get("Name"),
+            len(item_list_data.get("MediaSources", [])),
+        )
         for mediasource in item_list_data["MediaSources"]:
             if mediasource["Id"]==mediasource_id:
                 return(mediasource)
@@ -386,7 +398,11 @@ class EmbyHttp(threading.Thread):
         else:
             response = self.get_item_info(user_id,item_id)
             if self.config["DebugLevel"]==2:
-                print(response["MediaStreams"])
+                print(
+                    "MediaStreams: "
+                    + str(len(response.get("MediaStreams", [])))
+                    + " streams"
+                )
             subs_index=0
             for media in response["MediaStreams"]:
                 if media["Type"]=="Subtitle":

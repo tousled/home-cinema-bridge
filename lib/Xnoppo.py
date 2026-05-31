@@ -8,11 +8,19 @@ import urllib.parse
 from home_cinema_bridge.media_servers.emby import (
     MediaServerPlaybackContext,
     MediaServerPlaybackEventPublisher,
+    MediaServerPlaybackProgressReporter,
 )
 from home_cinema_bridge.network.http import get_http_session
+from home_cinema_bridge.playback.during import (
+    PlaybackDuringPlaybackOrchestrator,
+    PlaybackMonitoringRequest,
+)
 from home_cinema_bridge.playback.error_handling import (
-    PlaybackErrorRecoveryRequest,
     create_playback_error_handler,
+)
+from home_cinema_bridge.playback.orchestrator import (
+    PlaybackOrchestrationRequest,
+    PlaybackOrchestrator,
 )
 from home_cinema_bridge.playback.startup import (
     OppoPlaybackStartRequest,
@@ -20,6 +28,7 @@ from home_cinema_bridge.playback.startup import (
 )
 from home_cinema_bridge.playback.startup.factory import (
     create_playback_startup_orchestrator as build_playback_startup_orchestrator,
+    create_playback_startup_wiring as build_playback_startup_wiring,
 )
 from home_cinema_bridge.playback.media_location import (
     resolve_player_media_file_location,
@@ -51,10 +60,19 @@ from .Xnoppo_AVR import (
 from .Xnoppo_TV import tv_set_prev
 
 _qpl_last_observed_states = {}
+MEDIA_SERVER_TICKS_PER_SECOND = 10_000_000
 
 
 def reset_qpl_observation_state():
     _qpl_last_observed_states.clear()
+
+
+def media_server_ticks_to_seconds(position_ticks):
+    return int(position_ticks / MEDIA_SERVER_TICKS_PER_SECOND)
+
+
+def seconds_to_media_server_ticks(position_seconds):
+    return position_seconds * MEDIA_SERVER_TICKS_PER_SECOND
 
 
 def log_oppo_qpl_state(config, label, changes_only=False):
@@ -871,6 +889,10 @@ def create_playback_startup_orchestrator(config):
     return build_playback_startup_orchestrator(config)
 
 
+def create_playback_startup_wiring(config):
+    return build_playback_startup_wiring(config)
+
+
 def switch_playback_output_to_oppo(emby_session, startup_orchestrator, startup_timer):
 
     request = PlaybackOutputSwitchRequest(
@@ -954,7 +976,8 @@ def playto_file(EmbySession, data, scripterx=False):
             if EmbySession.config["DebugLevel"] > 0:
                 print(response_data5)
 
-        startup_orchestrator = create_playback_startup_orchestrator(EmbySession.config)
+        startup_wiring = create_playback_startup_wiring(EmbySession.config)
+        startup_orchestrator = startup_wiring.startup_orchestrator
         output_switch_result = switch_playback_output_to_oppo(
             EmbySession,
             startup_orchestrator,
@@ -1030,65 +1053,13 @@ def playto_file(EmbySession, data, scripterx=False):
             poll_interval_seconds=playback_start_poll_interval,
         )
 
-        with startup_timer.measure_step("start_oppo_playback"):
-            oppo_playback_start_result = startup_orchestrator.start_oppo_playback(
-                request=oppo_playback_start_request,
-                on_waiting=notify_playback_waiting,
-            )
+        playticks = 0
+        ispaused = False
+        ismuted = False
 
-        log_oppo_qpl_state(EmbySession.config, "after_playnormalfile")
+        def build_monitoring_request(_oppo_playback_start_result):
+            nonlocal playticks
 
-        playback_state = oppo_playback_start_result.playback_state
-        logging.info(
-            "OPPO playback startup result | successful=%s | media_mounted=%s | playback_command_accepted=%s | playback_started_on_device=%s | status=%s | category=%s | detail=%s",
-            oppo_playback_start_result.successful,
-            oppo_playback_start_result.media_mounted,
-            oppo_playback_start_result.playback_command_accepted,
-            oppo_playback_start_result.playback_started_on_device,
-            playback_state.status.value if playback_state is not None else None,
-            playback_state.category.value if playback_state is not None else None,
-            oppo_playback_start_result.detail,
-        )
-
-        if not oppo_playback_start_result.successful:
-            with startup_timer.measure_step("recover_after_oppo_startup_failure"):
-                error_handler = create_playback_error_handler(EmbySession.config)
-                error_handler.recover(
-                    PlaybackErrorRecoveryRequest(
-                        reason="oppo_startup_failed",
-                        previous_tv_app_id=output_switch_result.previous_tv_app_id,
-                        tv_enabled=EmbySession.config.get("TV") is True,
-                        av_enabled=EmbySession.config.get("AV") is True,
-                    )
-                )
-
-            if not oppo_playback_start_result.media_mounted:
-                error_message = (
-                    EmbySession.lang["x_msg_error_mount"]
-                    + media_location.content_server
-                    + "/"
-                    + media_location.content_directory
-                    + " - info:"
-                    + str(oppo_playback_start_result.detail)
-                )
-            elif not oppo_playback_start_result.playback_command_accepted:
-                error_message = (
-                    EmbySession.lang["x_msg_error_play"]
-                    + media_location.playback_file_name
-                    + " - info:"
-                    + str(oppo_playback_start_result.detail)
-                )
-            else:
-                error_message = EmbySession.lang["x_msg_timeout_play"]
-                logging.info("Timeout Reproduciendo %s", movie)
-
-            if scripterx:
-                EmbySession.send_message2(params["Session_id"], error_message, 5000)
-            else:
-                EmbySession.send_user_message(
-                    params["ControllingUserId"], error_message, 5000
-                )
-        else:
             with startup_timer.measure_step("notify_media_server_playback_started"):
                 EmbySession.playstate = "Playing"
                 media_server_playback_event_publisher.started()
@@ -1127,27 +1098,6 @@ def playto_file(EmbySession, data, scripterx=False):
                     )
                 logging.info("Reprodución iniciada: %s", movie)
 
-            with startup_timer.measure_step("initial_global_info_before_progress_loop"):
-                response_data_gb = getglobalinfo(EmbySession.config)
-                log_oppo_qpl_state(
-                    EmbySession.config,
-                    "before_getglobalinfo_loop",
-                    changes_only=True,
-                )
-            cur_time = 0
-            total_time = 0
-            playingtime = {}
-            playingtime["total_time"] = total_time
-            playingtime["cur_time"] = cur_time
-
-            positionticks = playticks
-            totalticks = 0
-            last_valid_positionticks = playticks
-            last_valid_totalticks = 0
-            last_valid_cur_time = int(playticks / 10_000_000)
-            last_valid_total_time = 0
-            ispaused = False
-            ismuted = False
             with startup_timer.measure_step("apply_subtitle_track"):
                 apply_selected_subtitle_track(
                     EmbySession,
@@ -1157,90 +1107,97 @@ def playto_file(EmbySession, data, scripterx=False):
                 )
             startup_timer.log_summary()
 
-            while response_data_gb.find('"is_video_playing":true') > 0:
-                time.sleep(1)
-                if EmbySession.playstate != "Replay":
-                    response_data_gb = getglobalinfo(EmbySession.config)
-                    log_oppo_qpl_state(
-                        EmbySession.config,
-                        "before_getglobalinfo_loop",
-                        changes_only=True,
-                    )
-                    if response_data_gb.find('"is_video_playing":true') > 0:
-                        playback_position = (
-                            startup_orchestrator.get_oppo_playback_position()
-                        )
-                        playingtime = {
-                            "cur_time": playback_position.current_seconds,
-                            "total_time": playback_position.total_seconds,
-                        }
-                if response_data_gb.find('"is_video_playing":true') > 0:
-                    if EmbySession.config["DebugLevel"] > 0:
-                        print(
-                            "PlayingTime: "
-                            + str(playingtime["cur_time"])
-                            + " de "
-                            + str(playingtime["total_time"])
-                        )
-                    logging.debug(
-                        "PlayingTime: %s de %s",
-                        str(playingtime["cur_time"]),
-                        str(playingtime["total_time"]),
-                    )
-                    if playingtime["cur_time"] > 0 and playingtime["total_time"] > 0:
-                        positionticks = playingtime["cur_time"] * 10000000
-                        total_time = playingtime["total_time"]
-                        totalticks = total_time * 10000000
+            return PlaybackMonitoringRequest(
+                initial_position_seconds=media_server_ticks_to_seconds(playticks),
+                is_paused=ispaused,
+                is_muted=ismuted,
+            )
 
-                        last_valid_positionticks = positionticks
-                        last_valid_totalticks = totalticks
-                        last_valid_cur_time = playingtime["cur_time"]
-                        last_valid_total_time = total_time
+        during_playback_orchestrator = PlaybackDuringPlaybackOrchestrator(
+            oppo_playback=startup_wiring.oppo_playback,
+            progress_reporter=MediaServerPlaybackProgressReporter(
+                media_server_playback_event_publisher
+            ),
+        )
+        playback_orchestrator = PlaybackOrchestrator(
+            startup_orchestrator=startup_orchestrator,
+            during_playback_orchestrator=during_playback_orchestrator,
+            error_handler=create_playback_error_handler(EmbySession.config),
+        )
+        playback_orchestration_result = playback_orchestrator.play_until_stopped(
+            PlaybackOrchestrationRequest(
+                oppo_start_request=oppo_playback_start_request,
+                previous_tv_app_id=output_switch_result.previous_tv_app_id,
+                tv_enabled=EmbySession.config.get("TV") is True,
+                av_enabled=EmbySession.config.get("AV") is True,
+                on_startup_waiting=notify_playback_waiting,
+                on_startup_completed=lambda _result: log_oppo_qpl_state(
+                    EmbySession.config, "after_playnormalfile"
+                ),
+                build_monitoring_request=build_monitoring_request,
+            )
+        )
 
-                    if scripterx == False:
-                        media_server_playback_event_publisher.progress(
-                            position_ticks=positionticks,
-                            runtime_ticks=totalticks,
-                            is_paused=ispaused,
-                            is_muted=ismuted,
-                        )
+        oppo_playback_start_result = playback_orchestration_result.startup_result
 
-            if playingtime["cur_time"] <= 0 and last_valid_positionticks > 0:
-                if EmbySession.config["DebugLevel"] > 0:
-                    print(
-                        "Ignoring zero PlayingTime after stop. "
-                        + "Using last valid position: "
-                        + str(last_valid_cur_time)
-                        + " de "
-                        + str(last_valid_total_time)
-                    )
-                logging.info(
-                    "Ignoring zero PlayingTime after stop. Using last valid position: %s de %s",
-                    str(last_valid_cur_time),
-                    str(last_valid_total_time),
+        if not playback_orchestration_result.successful:
+            if not oppo_playback_start_result.media_mounted:
+                error_message = (
+                    EmbySession.lang["x_msg_error_mount"]
+                    + media_location.content_server
+                    + "/"
+                    + media_location.content_directory
+                    + " - info:"
+                    + str(oppo_playback_start_result.detail)
                 )
+            elif not oppo_playback_start_result.playback_command_accepted:
+                error_message = (
+                    EmbySession.lang["x_msg_error_play"]
+                    + media_location.playback_file_name
+                    + " - info:"
+                    + str(oppo_playback_start_result.detail)
+                )
+            else:
+                error_message = EmbySession.lang["x_msg_timeout_play"]
+                logging.info("Timeout Reproduciendo %s", movie)
 
-                positionticks = last_valid_positionticks
-                totalticks = last_valid_totalticks
-                total_time = last_valid_total_time
-                playingtime["cur_time"] = last_valid_cur_time
-                playingtime["total_time"] = last_valid_total_time
+            if scripterx:
+                EmbySession.send_message2(params["Session_id"], error_message, 5000)
+            else:
+                EmbySession.send_user_message(
+                    params["ControllingUserId"], error_message, 5000
+                )
+        else:
+            playback_monitoring_result = playback_orchestration_result.monitoring_result
+
+            positionticks = seconds_to_media_server_ticks(
+                playback_monitoring_result.position_seconds
+            )
+            totalticks = seconds_to_media_server_ticks(
+                playback_monitoring_result.duration_seconds
+            )
 
             logging.info("-----------------------------------------------------------")
-            logging.debug("getglobalinfo: %s", response_data_gb)
             logging.debug(
                 "PlayingTime: %s de %s",
-                str(playingtime["cur_time"]),
-                str(total_time),
+                playback_monitoring_result.position_seconds,
+                playback_monitoring_result.duration_seconds,
             )
             if EmbySession.config["DebugLevel"] > 0:
                 print(
                     "PlayingTime Final: "
-                    + str(playingtime["cur_time"])
+                    + str(playback_monitoring_result.position_seconds)
                     + " de "
-                    + str(total_time)
+                    + str(playback_monitoring_result.duration_seconds)
                 )
-            log_oppo_qpl_state(EmbySession.config, "after_getglobalinfo_loop")
+            logging.info(
+                "OPPO playback monitoring stopped | final_state=%s | category=%s | "
+                "position_ticks=%s | runtime_ticks=%s",
+                playback_monitoring_result.final_state.status.value,
+                playback_monitoring_result.final_state.category.value,
+                positionticks,
+                totalticks,
+            )
 
             media_server_playback_event_publisher.stopped(
                 position_ticks=positionticks,
@@ -1248,15 +1205,11 @@ def playto_file(EmbySession, data, scripterx=False):
                 is_paused=ispaused,
                 is_muted=ismuted,
             )
-            played = False
-            if totalticks > 0:
-                if (positionticks / totalticks) > 0.95:
-                    played = True
             logging.info(
                 "Emby playback stopped | position_ticks=%s | runtime_ticks=%s | played=%s",
                 positionticks,
                 totalticks,
-                played,
+                playback_monitoring_result.played,
             )
             log_oppo_qpl_state(
                 EmbySession.config,
