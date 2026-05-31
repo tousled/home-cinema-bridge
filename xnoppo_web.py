@@ -5,7 +5,7 @@ from pathlib import Path
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from home_cinema_bridge.devices.tv.factory import get_supported_tv_models
-from lib.oppo_control import (
+from home_cinema_bridge.devices.oppo.web_control import (
     check_socket,
     sendnotifyremote,
     getmainfirmwareversion,
