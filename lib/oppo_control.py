@@ -11,67 +11,11 @@ from .devices.oppo.mounted_share import (
     OppoMountedShare,
     parse_mounted_share_response,
 )
-from .devices.oppo.playback_status_client import OppoPlaybackStatusClient
 from .devices.oppo.legacy_network_compat import (
     LoginNFS,
     LoginSambaWithOutID,
     smbtrick,
 )
-
-
-_qpl_last_observed_states = {}
-
-
-def reset_qpl_observation_state():
-    _qpl_last_observed_states.clear()
-
-
-def log_oppo_qpl_state(config, label, changes_only=False):
-    try:
-        debug_level = int(config.get("DebugLevel", 0))
-        if debug_level <= 0:
-            return None
-
-        oppo_ip = config.get("Oppo_IP")
-        if not oppo_ip:
-            print(f"QPL:{label} skipped | Oppo_IP is not configured")
-            return None
-
-        client = OppoPlaybackStatusClient(
-            host=oppo_ip,
-            port=int(config.get("OPPO_Port", 23)),
-            timeout=float(config.get("timeout_oppo_conection", 3)),
-        )
-
-        result = client.query_playback_state()
-
-        if changes_only and debug_level < 2:
-            current_state = (result.status, result.category.value, result.ok)
-            previous_state = _qpl_last_observed_states.get(label)
-
-            if previous_state == current_state:
-                return result
-
-            _qpl_last_observed_states[label] = current_state
-
-        print(
-            f"QPL:{label} | "
-            f"raw={result.raw_response!r} | "
-            f"status={result.status} | "
-            f"category={result.category.value} | "
-            f"ok={result.ok}"
-        )
-
-        return result
-
-    except Exception as exc:
-        try:
-            if config.get("DebugLevel", 0) > 0:
-                print(f"QPL:{label} | ERROR {type(exc).__name__}: {exc}")
-        except Exception:
-            pass
-
-        return None
 
 
 def oppo_control_api_client(config):
