@@ -8,6 +8,7 @@ from home_cinema_bridge.playback.during import (
     PlaybackDuringPlaybackOrchestrator,
     PlaybackMonitoringRequest,
     PlaybackMonitoringResult,
+    PlaybackMonitoringStopReason,
 )
 from home_cinema_bridge.playback.error_handling import (
     PlaybackErrorHandler,
@@ -152,6 +153,10 @@ class PlaybackOrchestrator:
                     final_player_state=monitoring_result.final_state,
                     previous_tv_app_id=(
                         startup_result.output_switch_result.previous_tv_app_id
+                    ),
+                    media_ended=(
+                        monitoring_result.stop_reason
+                        == PlaybackMonitoringStopReason.NATURAL_END
                     ),
                     tv_enabled=(
                         restore_outputs_on_finish

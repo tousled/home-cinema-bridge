@@ -43,9 +43,11 @@ class RecordingAvReceiver:
 
 
 class RecordingOppoPlayback:
-    def __init__(self, states):
+    def __init__(self, states, stop_result=None):
         self.states = list(states)
         self.state_calls = 0
+        self.stop_calls = 0
+        self.stop_result = stop_result or DeviceCommandResult.success("stopped")
 
     def get_playback_state(self):
         self.state_calls += 1
@@ -55,6 +57,10 @@ class RecordingOppoPlayback:
         if isinstance(next_state, Exception):
             raise next_state
         return next_state
+
+    def stop_playback(self):
+        self.stop_calls += 1
+        return self.stop_result
 
 
 class FinishPlaybackOrchestratorTest(unittest.TestCase):
@@ -224,6 +230,38 @@ class FinishPlaybackOrchestratorTest(unittest.TestCase):
         self.assertFalse(result.successful)
         self.assertEqual(DeviceCommandStatus.FAILED, result.player_idle_result.status)
         self.assertEqual(1, len(stop_reporter.calls))
+
+    def test_closes_active_player_after_natural_media_end_before_idle_confirmation(self):
+        stop_reporter = RecordingStopReporter()
+        oppo = RecordingOppoPlayback(
+            [_state(OppoPlaybackStatus.HOME_MENU, OppoPlaybackCategory.IDLE)]
+        )
+        orchestrator = FinishPlaybackOrchestrator(
+            stopped_reporter=stop_reporter,
+            television=RecordingTelevision(),
+            av_receiver=RecordingAvReceiver(),
+            oppo_playback=oppo,
+            sleep=lambda seconds: None,
+        )
+
+        result = orchestrator.finish(
+            PlaybackFinishRequest(
+                position_seconds=3529,
+                duration_seconds=3529,
+                final_player_state=_state(
+                    OppoPlaybackStatus.PLAY,
+                    OppoPlaybackCategory.ACTIVE,
+                ),
+                previous_tv_app_id="com.emby.app",
+                media_ended=True,
+            )
+        )
+
+        self.assertTrue(result.successful)
+        self.assertEqual(1, oppo.stop_calls)
+        self.assertEqual(1, oppo.state_calls)
+        self.assertEqual(OppoPlaybackStatus.HOME_MENU, result.final_player_state.status)
+        self.assertEqual(3529, stop_reporter.calls[0]["position_seconds"])
 
 
 def _state(status, category):

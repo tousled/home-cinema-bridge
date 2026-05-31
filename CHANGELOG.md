@@ -6,6 +6,33 @@ The format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.
 
 > This fork is currently in pre-1.0 modernization. Versions `0.x` may introduce breaking changes while the legacy architecture is progressively replaced.
 
+## [0.5.1] - 2026-06-01
+
+### Changed
+
+- Updated the web-reported application version to `0.5.1`.
+- Documented OPPO natural media-end behaviour in the public state-machine notes.
+
+### Fixed
+
+- Fixed natural media endings that could leave the user on a black OPPO screen
+  for over a minute while QPL still reported `PLAY`.
+- The during-playback orchestrator now confirms repeated end-of-media playback
+  positions (`current >= total`) and reports a `NATURAL_END` stop reason.
+- Final playback position is normalized to the media runtime before reporting
+  stopped playback to Emby, avoiding values such as `3533 / 3529`.
+- The finish orchestrator now closes OPPO playback with `STP` after a natural
+  end if the player still reports an active state, then confirms idle before
+  restoring LG/AV outputs.
+
+### Validated
+
+- Real episode-ending logs showed OPPO stuck at `PLAY` with
+  `current=3533` / `total=3529` before eventually returning to `HOME_MENU`;
+  this release models that state directly.
+- Sending `STP` while OPPO was already idle (`SCREEN_SAVER`) returned success,
+  left OPPO idle, and a follow-up NFS mount succeeded.
+
 ## [0.5.0] - 2026-05-31
 
 ### Added
