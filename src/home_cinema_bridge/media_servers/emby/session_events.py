@@ -75,6 +75,36 @@ def build_playback_intent_from_session(
     )
 
 
+def describe_session_playback_source(
+    session: dict[str, Any],
+    item_info: dict[str, Any] | None = None,
+    item_user_data: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    now_playing = session.get("NowPlayingItem") or {}
+    play_state = session.get("PlayState") or {}
+    media_source = _selected_media_source(item_info, play_state.get("MediaSourceId"))
+    user_data = item_user_data or (item_info or {}).get("UserData") or {}
+
+    return {
+        "item_id": now_playing.get("Id"),
+        "item_name": now_playing.get("Name"),
+        "item_type": now_playing.get("Type"),
+        "item_container": now_playing.get("Container"),
+        "item_video_type": now_playing.get("VideoType"),
+        "media_source_id": play_state.get("MediaSourceId"),
+        "media_source_container": (media_source or {}).get("Container"),
+        "media_source_video_type": (media_source or {}).get("VideoType"),
+        "session_position_ticks_present": "PositionTicks" in play_state,
+        "session_position_ticks": play_state.get("PositionTicks"),
+        "saved_position_ticks": user_data.get("PlaybackPositionTicks"),
+        "played": user_data.get("Played"),
+        "play_count": user_data.get("PlayCount"),
+        "playback_percentage": user_data.get("PlayedPercentage"),
+        "audio_stream_index": play_state.get("AudioStreamIndex"),
+        "subtitle_stream_index": play_state.get("SubtitleStreamIndex"),
+    }
+
+
 def playback_intent_to_legacy_payload(intent: PlaybackIntent) -> dict[str, Any]:
     return {
         "ItemIds": [int(intent.media_item_id)],
@@ -92,3 +122,19 @@ def playback_intent_to_legacy_payload(intent: PlaybackIntent) -> dict[str, Any]:
 
 def _ticks_to_seconds(value: Any) -> int:
     return int(value or 0) // EMBY_TICKS_PER_SECOND
+
+
+def _selected_media_source(
+    item_info: dict[str, Any] | None,
+    media_source_id: str | None,
+) -> dict[str, Any] | None:
+    media_sources = (item_info or {}).get("MediaSources") or []
+    if media_source_id:
+        for media_source in media_sources:
+            if media_source.get("Id") == media_source_id:
+                return media_source
+
+    if media_sources:
+        return media_sources[0]
+
+    return None

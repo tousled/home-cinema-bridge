@@ -2,6 +2,7 @@ import unittest
 
 from home_cinema_bridge.media_servers.emby.session_events import (
     build_playback_intent_from_session,
+    describe_session_playback_source,
     find_monitored_session,
     is_same_media_item_request,
     playback_intent_to_legacy_payload,
@@ -116,6 +117,48 @@ class EmbySessionEventsTest(unittest.TestCase):
         self.assertEqual(120_000_000, payload["StartPositionTicks"])
         self.assertEqual("session-1", payload["SessionID"])
         self.assertEqual("lg-tv", payload["Device_Id"])
+
+    def test_describes_session_playback_source_for_diagnostics(self):
+        source = describe_session_playback_source(
+            {
+                "NowPlayingItem": {
+                    "Id": "11136",
+                    "Name": "Aquaman",
+                    "Type": "Movie",
+                    "Container": "blurayiso",
+                },
+                "PlayState": {
+                    "MediaSourceId": "source-1",
+                    "PositionTicks": 0,
+                    "AudioStreamIndex": 1,
+                    "SubtitleStreamIndex": -1,
+                },
+            },
+            item_info={
+                "UserData": {
+                    "PlaybackPositionTicks": 420_000_000,
+                    "Played": False,
+                    "PlayCount": 2,
+                    "PlayedPercentage": 44.0,
+                },
+                "MediaSources": [
+                    {
+                        "Id": "source-1",
+                        "Container": "iso",
+                        "VideoType": "Bluray",
+                    }
+                ],
+            },
+        )
+
+        self.assertEqual("11136", source["item_id"])
+        self.assertEqual("blurayiso", source["item_container"])
+        self.assertEqual("iso", source["media_source_container"])
+        self.assertEqual("Bluray", source["media_source_video_type"])
+        self.assertTrue(source["session_position_ticks_present"])
+        self.assertEqual(0, source["session_position_ticks"])
+        self.assertEqual(420_000_000, source["saved_position_ticks"])
+        self.assertFalse(source["played"])
 
 
 if __name__ == "__main__":

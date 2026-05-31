@@ -17,25 +17,26 @@ def bridge_playback_is_active(playstate: str) -> bool:
     return playstate in ("Loading", "Playing", "Replay")
 
 
-class LegacyPlaybackIntentDispatcher:
+class PlaybackIntentDispatcher:
     """
-    Temporary bridge from clean playback intents to legacy Xnoppo entry points.
+    Application boundary for playback requests observed from a media server.
 
-    Remove this when the websocket can call the parent PlaybackOrchestrator use
-    case directly.
+    The monitored-session path already enters with a clean PlaybackIntent. The
+    direct PlayNow path still enters with a legacy payload shape, so this class
+    keeps one explicit compatibility method until that path is migrated too.
     """
 
     def __init__(
         self,
         *,
-        emby_session,
+        legacy_playback_session,
         start_playback: Callable,
         switch_playback: Callable,
         reload_config: Callable[[], None],
         debug_level: int = 0,
         sleep=time.sleep,
     ) -> None:
-        self._emby_session = emby_session
+        self._legacy_playback_session = legacy_playback_session
         self._start_playback = start_playback
         self._switch_playback = switch_playback
         self._reload_config = reload_config
@@ -44,24 +45,30 @@ class LegacyPlaybackIntentDispatcher:
 
     def dispatch(self, intent: PlaybackIntent, *, scripterx: bool) -> bool:
         legacy_payload = playback_intent_to_legacy_payload(intent)
+        return self.dispatch_legacy_payload(legacy_payload, scripterx=scripterx)
+
+    def dispatch_legacy_payload(self, legacy_payload: dict, *, scripterx: bool) -> bool:
         if self._is_duplicate_request(legacy_payload):
             logging.info(
-                "Ignoring duplicate monitored playback event | item_id=%s | "
-                "playstate=%s",
+                "Ignoring duplicate playback request | item_id=%s | playstate=%s",
                 playback_request_media_item_id(legacy_payload),
-                self._emby_session.playstate,
+                self._legacy_playback_session.playstate,
             )
             return False
 
         self._wait_for_loading_to_finish()
-        if self._emby_session.playstate in ("Playing", "Replay"):
+        if self._legacy_playback_session.playstate in ("Playing", "Replay"):
             if self._debug_level > 0:
                 print("ya se esta reproduciendo algo")
-            self._switch_playback(self._emby_session, legacy_payload, scripterx)
+            self._switch_playback(
+                self._legacy_playback_session,
+                legacy_payload,
+                scripterx,
+            )
             return True
 
         thread = threading.Thread(
-            target=self._thread_function_play,
+            target=self._run_start_playback,
             args=(legacy_payload, scripterx),
         )
         thread.start()
@@ -69,14 +76,14 @@ class LegacyPlaybackIntentDispatcher:
 
     def _is_duplicate_request(self, legacy_payload: dict) -> bool:
         return bridge_playback_is_active(
-            self._emby_session.playstate
+            self._legacy_playback_session.playstate
         ) and is_same_media_item_request(
-            self._emby_session.currentdata,
+            self._legacy_playback_session.currentdata,
             legacy_payload,
         )
 
     def _wait_for_loading_to_finish(self) -> None:
-        if self._emby_session.playstate not in ("Loading", "Replay"):
+        if self._legacy_playback_session.playstate not in ("Loading", "Replay"):
             return
 
         if self._debug_level > 0:
@@ -84,12 +91,16 @@ class LegacyPlaybackIntentDispatcher:
 
         timeout = 60
         elapsed = 0
-        while self._emby_session.playstate == "Loading" and elapsed < timeout:
+        while self._legacy_playback_session.playstate == "Loading" and elapsed < timeout:
             self._sleep(3)
             elapsed = elapsed + 3
 
-    def _thread_function_play(self, legacy_payload: dict, scripterx: bool) -> None:
+    def _run_start_playback(self, legacy_payload: dict, scripterx: bool) -> None:
         print("Thread Play: starting")
-        self._start_playback(self._emby_session, legacy_payload, scripterx)
+        self._start_playback(
+            self._legacy_playback_session,
+            legacy_payload,
+            scripterx,
+        )
         self._reload_config()
         print("Thread Play: finishing")

@@ -18,15 +18,15 @@ import threading
 from websocket import WebSocketApp
 import logging
 import json
-import time
 from .Emby_http import EmbyHttp
 from .Xnoppo import *
 from home_cinema_bridge.media_servers.emby.session_events import (
     build_playback_intent_from_session,
+    describe_session_playback_source,
     find_monitored_session,
 )
-from home_cinema_bridge.playback.legacy_dispatch import (
-    LegacyPlaybackIntentDispatcher,
+from home_cinema_bridge.playback.dispatch import (
+    PlaybackIntentDispatcher,
     bridge_playback_is_active,
 )
 
@@ -52,13 +52,6 @@ class XnoppoWs(threading.Thread):
         self.emby_state='Init'
         threading.Thread.__init__(self)
         logging.info('Ws:Fin init\n')
-
-    def thread_function_play(self, data, scripterx=False):
-        print("Thread Play: starting")
-
-        playto_file(self.EmbySession, data, scripterx)
-        self.reload_config()
-        print("Thread Play: finishing")
 
     def set_lang(self,lang):
         self.ws_lang=lang
@@ -113,21 +106,28 @@ class XnoppoWs(threading.Thread):
     def _play(self, data):
         command = data['PlayCommand']
         if command == 'PlayNow':
+            logging.info(
+                "Emby websocket play command | command=%s | item_ids=%s | "
+                "start_position_present=%s | start_position_ticks=%s | "
+                "saved_position_ticks=%s | media_source_id=%s | "
+                "audio_stream_index=%s | subtitle_stream_index=%s | "
+                "device=%s",
+                command,
+                data.get("ItemIds"),
+                "StartPositionTicks" in data,
+                data.get("StartPositionTicks"),
+                data.get("SavedPlaybackPositionTicks"),
+                data.get("MediaSourceId"),
+                data.get("AudioStreamIndex"),
+                data.get("SubtitleStreamIndex"),
+                data.get("DeviceName"),
+            )
             # Play commands still use the legacy payload shape until the direct
             # command path is moved behind the same playback intent boundary.
-            if self.EmbySession.playstate=="Loading" or self.EmbySession.playstate=="Replay":
-                if self.ws_config["DebugLevel"]>0: print("Esta en la pantalla de Loading, tenemos que esperar")
-                timeout=60
-                elapsed=0
-                while self.EmbySession.playstate=="Loading" and elapsed<timeout:
-                    time.sleep(3)
-                    elapsed=elapsed+3
-            if self.EmbySession.playstate=="Playing":
-                if self.ws_config["DebugLevel"]>0: print("ya se esta reproduciendo algo")
-                playother(self.EmbySession,data,False)
-            else:
-                x = threading.Thread(target=self.thread_function_play, args=(data,))
-                x.start()
+            self._playback_intent_dispatcher().dispatch_legacy_payload(
+                data,
+                scripterx=False,
+            )
 
     def _general_commands(self,data):
         cmd = data['Name']
@@ -242,6 +242,39 @@ class XnoppoWs(threading.Thread):
                                 userdatalist = data["UserDataList"]
                                 userdata = userdatalist[0]
 
+                            playback_source = describe_session_playback_source(
+                                item_data,
+                                item_info=item_data_list,
+                                item_user_data=userdata,
+                            )
+                            logging.info(
+                                "Emby monitored playback source | "
+                                "item_id=%s | name=%s | item_type=%s | "
+                                "item_container=%s | item_video_type=%s | "
+                                "media_source_id=%s | media_source_container=%s | "
+                                "media_source_video_type=%s | "
+                                "session_position_present=%s | "
+                                "session_position_ticks=%s | "
+                                "saved_position_ticks=%s | played=%s | "
+                                "play_count=%s | played_percentage=%s | "
+                                "audio_stream_index=%s | subtitle_stream_index=%s",
+                                playback_source["item_id"],
+                                playback_source["item_name"],
+                                playback_source["item_type"],
+                                playback_source["item_container"],
+                                playback_source["item_video_type"],
+                                playback_source["media_source_id"],
+                                playback_source["media_source_container"],
+                                playback_source["media_source_video_type"],
+                                playback_source["session_position_ticks_present"],
+                                playback_source["session_position_ticks"],
+                                playback_source["saved_position_ticks"],
+                                playback_source["played"],
+                                playback_source["play_count"],
+                                playback_source["playback_percentage"],
+                                playback_source["audio_stream_index"],
+                                playback_source["subtitle_stream_index"],
+                            )
                             playback_intent = build_playback_intent_from_session(
                                 item_data,
                                 monitored_device_id=self.ws_config["MonitoredDevice"],
@@ -310,8 +343,8 @@ class XnoppoWs(threading.Thread):
                     self.MonitoredState = ''
 
     def _playback_intent_dispatcher(self):
-        return LegacyPlaybackIntentDispatcher(
-            emby_session=self.EmbySession,
+        return PlaybackIntentDispatcher(
+            legacy_playback_session=self.EmbySession,
             start_playback=playto_file,
             switch_playback=playother,
             reload_config=self.reload_config,

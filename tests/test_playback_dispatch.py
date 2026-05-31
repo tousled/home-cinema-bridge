@@ -1,19 +1,19 @@
 import unittest
 
-from home_cinema_bridge.playback.intent import PlaybackIntent
-from home_cinema_bridge.playback.legacy_dispatch import (
-    LegacyPlaybackIntentDispatcher,
+from home_cinema_bridge.playback.dispatch import (
+    PlaybackIntentDispatcher,
     bridge_playback_is_active,
 )
+from home_cinema_bridge.playback.intent import PlaybackIntent
 
 
-class FakeEmbySession:
+class FakeLegacyPlaybackSession:
     def __init__(self, *, playstate="Free", currentdata=None):
         self.playstate = playstate
         self.currentdata = currentdata
 
 
-class PlaybackLegacyDispatchTest(unittest.TestCase):
+class PlaybackDispatchTest(unittest.TestCase):
     def test_bridge_playback_is_active_for_bridge_owned_states(self):
         self.assertTrue(bridge_playback_is_active("Loading"))
         self.assertTrue(bridge_playback_is_active("Playing"))
@@ -21,13 +21,13 @@ class PlaybackLegacyDispatchTest(unittest.TestCase):
         self.assertFalse(bridge_playback_is_active("Free"))
 
     def test_ignores_duplicate_intent_for_current_item(self):
-        session = FakeEmbySession(
+        session = FakeLegacyPlaybackSession(
             playstate="Playing",
             currentdata={"ItemIds": [11136]},
         )
         calls = []
-        dispatcher = LegacyPlaybackIntentDispatcher(
-            emby_session=session,
+        dispatcher = PlaybackIntentDispatcher(
+            legacy_playback_session=session,
             start_playback=lambda *args: calls.append(("start", args)),
             switch_playback=lambda *args: calls.append(("switch", args)),
             reload_config=lambda: calls.append(("reload", None)),
@@ -40,13 +40,13 @@ class PlaybackLegacyDispatchTest(unittest.TestCase):
         self.assertEqual([], calls)
 
     def test_switches_when_another_item_arrives_during_playback(self):
-        session = FakeEmbySession(
+        session = FakeLegacyPlaybackSession(
             playstate="Playing",
             currentdata={"ItemIds": [11136]},
         )
         calls = []
-        dispatcher = LegacyPlaybackIntentDispatcher(
-            emby_session=session,
+        dispatcher = PlaybackIntentDispatcher(
+            legacy_playback_session=session,
             start_playback=lambda *args: calls.append(("start", args)),
             switch_playback=lambda *args: calls.append(("switch", args)),
             reload_config=lambda: calls.append(("reload", None)),
@@ -58,6 +58,29 @@ class PlaybackLegacyDispatchTest(unittest.TestCase):
         self.assertTrue(dispatched)
         self.assertEqual("switch", calls[0][0])
         self.assertEqual([22222], calls[0][1][1]["ItemIds"])
+
+    def test_direct_legacy_payload_uses_same_switching_rules(self):
+        session = FakeLegacyPlaybackSession(
+            playstate="Playing",
+            currentdata={"ItemIds": [11136]},
+        )
+        calls = []
+        dispatcher = PlaybackIntentDispatcher(
+            legacy_playback_session=session,
+            start_playback=lambda *args: calls.append(("start", args)),
+            switch_playback=lambda *args: calls.append(("switch", args)),
+            reload_config=lambda: calls.append(("reload", None)),
+            sleep=lambda seconds: None,
+        )
+
+        dispatched = dispatcher.dispatch_legacy_payload(
+            {"ItemIds": [22222]},
+            scripterx=False,
+        )
+
+        self.assertTrue(dispatched)
+        self.assertEqual("switch", calls[0][0])
+        self.assertFalse(calls[0][1][2])
 
 
 def _intent(*, media_item_id):
