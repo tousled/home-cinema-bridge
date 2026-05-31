@@ -1,19 +1,13 @@
 from __future__ import annotations
 
-import json
 import logging
 from collections.abc import Callable
 from typing import Any
 
-from home_cinema_bridge.playback.intent import PlaybackOrigin
-
-from lib.oppo_control import (
-    getplayingtime,
-    sendremotekey,
-    setaudiotrack,
-    setplaytime,
-    set_subtitles_track,
+from home_cinema_bridge.devices.oppo.playback_command_control import (
+    OppoPlaybackCommandControl,
 )
+from home_cinema_bridge.playback.intent import PlaybackOrigin
 
 
 MEDIA_SERVER_TICKS_PER_SECOND = 10_000_000
@@ -29,20 +23,14 @@ class EmbyPlaybackCommandHandler:
         emby_session,
         config_provider: Callable[[], dict[str, Any]],
         playback_intent_dispatcher_factory: Callable,
-        send_remote_key=sendremotekey,
-        set_audio_track=setaudiotrack,
-        set_play_time=setplaytime,
-        set_subtitle_track=set_subtitles_track,
-        get_playing_time=getplayingtime,
+        oppo_control_factory: Callable[
+            [dict[str, Any]], OppoPlaybackCommandControl
+        ] = OppoPlaybackCommandControl,
     ) -> None:
         self._emby_session = emby_session
         self._config_provider = config_provider
         self._playback_intent_dispatcher_factory = playback_intent_dispatcher_factory
-        self._send_remote_key = send_remote_key
-        self._set_audio_track = set_audio_track
-        self._set_play_time = set_play_time
-        self._set_subtitle_track = set_subtitle_track
-        self._get_playing_time = get_playing_time
+        self._oppo_control_factory = oppo_control_factory
 
     def handle_play(self, data: dict) -> None:
         command = data["PlayCommand"]
@@ -81,7 +69,7 @@ class EmbyPlaybackCommandHandler:
                 params["item_id"],
                 int(args["Index"]),
             )
-            self._set_audio_track(self._config, audio_index)
+            self._oppo_control.select_audio_track(audio_index)
             self._emby_session.currentdata["AudioStreamIndex"] = int(args["Index"])
             return
 
@@ -92,7 +80,7 @@ class EmbyPlaybackCommandHandler:
                 params["item_id"],
                 int(args["Index"]),
             )
-            self._set_subtitle_track(self._config, subtitle_index)
+            self._oppo_control.select_subtitle_track(subtitle_index)
             self._emby_session.currentdata["SubtitleStreamIndex"] = int(args["Index"])
 
     def handle_playstate(self, data: dict) -> None:
@@ -132,7 +120,7 @@ class EmbyPlaybackCommandHandler:
             )
             return
 
-        self._send_remote_key(remote_key, self._config)
+        self._oppo_control.send_remote_key(remote_key)
 
     def _seek_to_absolute_position(self, data: dict) -> None:
         position_ticks = int(data["SeekPositionTicks"])
@@ -141,7 +129,7 @@ class EmbyPlaybackCommandHandler:
             "position_ticks=%s",
             position_ticks,
         )
-        self._set_play_time(self._config, position_ticks)
+        self._oppo_control.seek_to_position_ticks(position_ticks)
 
     def _seek_to_relative_position(
         self,
@@ -160,17 +148,18 @@ class EmbyPlaybackCommandHandler:
             relative_ticks,
             target_ticks,
         )
-        self._set_play_time(self._config, target_ticks)
+        self._oppo_control.seek_to_position_ticks(target_ticks)
 
     def _current_oppo_position_ticks(self) -> int:
-        response_text = self._get_playing_time(self._config)
-        response = json.loads(response_text)
-        current_seconds = int(response.get("cur_time", 0))
-        return current_seconds * MEDIA_SERVER_TICKS_PER_SECOND
+        return self._oppo_control.current_position_ticks()
 
     @property
     def _config(self) -> dict[str, Any]:
         return self._config_provider()
+
+    @property
+    def _oppo_control(self) -> OppoPlaybackCommandControl:
+        return self._oppo_control_factory(self._config)
 
 
 def _remote_key_for_playstate_command(command: str) -> str | None:
