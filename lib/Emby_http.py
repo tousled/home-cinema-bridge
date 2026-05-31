@@ -62,7 +62,7 @@ class EmbyHttp(threading.Thread):
         params["subtitle_stream_index"] = subtitle_stream_index
         params["audio_stream_index"] = audio_stream_index
         params["ControllingUserId"] = data.get("ControllingUserId", "")
-        params["Session_id"] = data.get("SessionID", None)
+        params["Session_id"] = data.get("SessionID") or data.get("Id")
         params["play_session_id"] = data.get("PlaySessionId", "")
         params["DeviceName"] = data.get("DeviceName", "")
         params["Device_Id"] = data.get("Device_Id", "")
@@ -113,7 +113,18 @@ class EmbyHttp(threading.Thread):
         message_data = {}
         message_data["Command"] = 'Stop'
 
+        logging.info(
+            "Sending Emby session playback stop | session_id=%s | payload=%s",
+            session_id,
+            message_data,
+        )
         response = self.client.stop_session_playback(session_id, message_data)
+        logging.info(
+            "Emby session playback stop response | session_id=%s | status=%s | body=%s",
+            session_id,
+            getattr(response, "status_code", None),
+            getattr(response, "text", ""),
+        )
         if self.config["DebugLevel"]>0: print (response.text)
 
         return response
@@ -123,7 +134,19 @@ class EmbyHttp(threading.Thread):
         return self.client.get_headers(user_info)
 
     def send_message2(self,session_id, sms_txt, timeout=3500):
+        logging.info(
+            "Sending Emby session message | session_id=%s | timeout_ms=%s | text=%s",
+            session_id,
+            timeout,
+            sms_txt,
+        )
         response = self.client.send_session_message(session_id, sms_txt, timeout)
+        logging.info(
+            "Emby session message response | session_id=%s | status=%s | body=%s",
+            session_id,
+            getattr(response, "status_code", None),
+            getattr(response, "text", ""),
+        )
         if self.config["DebugLevel"]>0: print (response.text)
 
         return response
@@ -172,19 +195,6 @@ class EmbyHttp(threading.Thread):
         if self.config["DebugLevel"]>0: print (response.text)
 
         return response
-
-    def set_movie(self,session_id,item_id,item_type,item_name):
-
-        response = self.client.set_session_viewing(
-            session_id,
-            item_type,
-            item_id,
-            item_name,
-        )
-        if self.config["DebugLevel"]>0: print (response.text)
-
-        return response
-
 
     def get_ulr_data(self,url, config, user_info):
 
@@ -251,14 +261,26 @@ class EmbyHttp(threading.Thread):
         url2 = ('{server}/emby/Users/' + str(user_id) + '/Items/' + str(item_id))
         response_data_item = self.get_ulr_data(url2, self.config, self.user_info)
         item_list_data = json.loads(response_data_item)
-        logging.debug('Item List Data %s',item_list_data)
+        logging.debug(
+            "Item data loaded | item_id=%s | name=%s | type=%s | path=%s | streams=%s",
+            item_id,
+            item_list_data.get("Name"),
+            item_list_data.get("Type"),
+            item_list_data.get("Path"),
+            len(item_list_data.get("MediaStreams", [])),
+        )
         return item_list_data
 
     def get_item_info2(self,user_id,item_id,mediasource_id):
         url2 = ('{server}/emby/Users/' + str(user_id) + '/Items/' + str(item_id))
         response_data_item = self.get_ulr_data(url2, self.config, self.user_info)
         item_list_data = json.loads(response_data_item)
-        logging.debug('Item List Data %s',item_list_data)
+        logging.debug(
+            "Item media sources loaded | item_id=%s | name=%s | media_sources=%s",
+            item_id,
+            item_list_data.get("Name"),
+            len(item_list_data.get("MediaSources", [])),
+        )
         for mediasource in item_list_data["MediaSources"]:
             if mediasource["Id"]==mediasource_id:
                 return(mediasource)
@@ -363,7 +385,11 @@ class EmbyHttp(threading.Thread):
         else:
             response = self.get_item_info(user_id,item_id)
             if self.config["DebugLevel"]==2:
-                print(response["MediaStreams"])
+                print(
+                    "MediaStreams: "
+                    + str(len(response.get("MediaStreams", [])))
+                    + " streams"
+                )
             subs_index=0
             for media in response["MediaStreams"]:
                 if media["Type"]=="Subtitle":

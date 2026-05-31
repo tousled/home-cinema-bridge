@@ -16,6 +16,8 @@ This fork is currently in **pre-1.0 modernization**. The codebase is being progr
 
 ## Project status
 
+Current release: `0.5.0`
+
 Current version line: `0.x`
 
 This fork is not considered API-stable yet. Versions before `1.0.0` may introduce breaking changes while the legacy architecture is progressively replaced.
@@ -57,6 +59,8 @@ Typical flow:
 - Subtitle selection handling.
 - OPPO QPL diagnostics for playback-state observation.
 - Python 3.14 runtime support.
+- Parent playback orchestration for startup, during-playback monitoring,
+  finish/return, replacement, and centralized error recovery.
 
 ## Supported AV integrations
 
@@ -84,6 +88,15 @@ This fork has already replaced several legacy areas:
 - Migrated AV handling from copied Python files to adapter/factory classes.
 - Removed the legacy `web/libraries/AV` code-copying flow.
 - Moved OPPO Autoscript unmount logic into its own module.
+- Removed the legacy `lib/Xnoppo.py` playback entry point.
+- Replaced the legacy `playto_file` / `playother` playback paths with a parent
+  playback orchestrator.
+- Replaced legacy active-playback detection based on `getglobalinfo` text with
+  OPPO QPL state monitoring.
+- Added a clean finish flow that reports stopped playback to Emby, waits for
+  OPPO idle state, returns LG to the previous app, and restores AV TV audio.
+- Added active-playback replacement through the normal stop/start lifecycle,
+  without remounting over an already-playing OPPO session.
 
 ## Architecture direction
 
@@ -153,6 +166,81 @@ docker run --rm \
 
 For NAS / Portainer deployments, using a Git-backed stack is recommended.
 
+## AV receiver setup
+
+### Denon / Marantz ARC and input recovery
+
+When a Denon or Marantz receiver powers on from standby, TV ARC/CEC can switch
+the receiver back to TV Audio after the app has selected the OPPO HDMI input.
+The app mitigates this by querying the receiver input (`SI?`) and reapplying the
+configured OPPO input if it observes `SITV`.
+
+For setups where ARC/CEC keeps overriding the selected input, disable ARC on the
+receiver:
+
+1. Open the receiver's on-screen setup menu.
+2. Go to **General** > **HDMI Setup** > **ARC**.
+3. Set **ARC** to **Off**.
+
+With ARC disabled, the app must restore TV audio explicitly when OPPO playback
+ends. Configure the receiver's TV audio input as usual; Denon and Marantz use
+`SITV`.
+
+### Other AV receivers
+
+For receivers that do not support input state queries (Yamaha, NAD, Onkyo,
+Scripts), configure `av_delay_hdmi` in the web UI. This adds a delay after
+power-on before the app attempts to change the HDMI input.
+
+## FAQ / Troubleshooting
+
+### OPPO NFS mount returns `{"success":false,"retInfo":"failed"}`
+
+This error means the OPPO / Chinoppo MediaControl API rejected the network
+folder mount request. It is not always caused by a bad Emby path.
+
+Before changing path mappings or adding retries, verify the real state:
+
+- OPPO playback state through QPL should be idle (`HOME MENU`, `SCREEN SAVER`,
+  or `MEDIA CENTER`).
+- OPPO `getglobalinfo` should not report active video, BDMV, or disc playback.
+- OPPO `getdevicelist` should still list the NFS server.
+- `loginNfsServer` should return success.
+- `getNfsShareFolderlist` should show the exported root, for example
+  `volume1/Video`.
+- The NAS should export the expected path to the OPPO player IP.
+
+If all of the above is true but `mountNfsSharedFolder` still returns
+`retInfo=failed` for folders that normally work, the likely cause is a stale or
+stuck OPPO NFS/MediaControl client state. Do not fix this by adding blind
+sleeps or repeated mount retries. First reboot or power-cycle the OPPO and test
+the same mount again.
+
+If rebooting the OPPO fixes the mount, treat it as an OPPO-side state cleanup
+problem. Any automatic recovery should be implemented deliberately in the
+playback finish/error-recovery flow, based on the specific command or state
+transition proven to reset the OPPO safely.
+
+During playback stabilization, the following command-level cleanups were tested
+after an ISO/Blu-ray playback left NFS mounts failing: `RST`, `APP NET`, `CLR`,
+`STP`/`HOM`, an `EJT` open/close cycle, OPPO mount-slot `umount`, and the older
+legacy MediaControl preparation sequence. None restored NFS mounting in that
+state. The only proven recovery in that test was rebooting/power-cycling the
+OPPO.
+
+### Replacement playback returns to HDMI instead of Emby
+
+This was a bug fixed in `0.5.0`.
+
+When replacing one active OPPO playback with another item, the LG TV is already
+on the OPPO HDMI input. The app must preserve the original non-HDMI app for the
+whole room playback flow. If the replacement startup reads the current LG app
+again and stores HDMI as the previous app, the final stop returns to HDMI
+instead of Emby.
+
+The current flow preserves the first non-HDMI TV app across replacement cycles
+and uses it for the final finish/return step.
+
 ## Configuration
 
 The app creates or uses a runtime `config.json`.
@@ -189,6 +277,7 @@ This fork currently uses pre-1.0 semantic versioning:
 0.2.x  Docker runtime
 0.3.x  Playback / QPL / subtitle hardening
 0.4.x  Python 3.14 + AV adapters/factory
+0.5.x  Playback orchestration and replacement stabilization
 ```
 
 The future `1.0.0` release will represent the first stable modernized version of this fork.
@@ -199,11 +288,12 @@ See [`CHANGELOG.md`](CHANGELOG.md) for details.
 
 Near-term:
 
-- migrate TV handling to adapters/factory
-- remove legacy `web/libraries/TV` copy-based flow
-- integrate improved LG handling
-- harden OPPO HTTP calls when the player is powered off or unreachable
-- improve playback startup observability and performance
+- migrate remaining legacy web configuration and OPPO diagnostic flows
+- continue extracting Emby API calls from the legacy `EmbySession` boundary
+- improve OPPO stale NFS mount-state diagnostics and manual recovery guidance
+- modernize TV handling where legacy wrappers still remain
+- compare startup timings between the latest release and older tags using
+  controlled MKV/ISO validation runs
 
 Later:
 
@@ -247,4 +337,3 @@ The original upstream changelog is preserved in [`docs/UPSTREAM_CHANGELOG.md`](d
 This project inherits licensing considerations from the original project and its dependencies.
 
 Before publishing formal releases or accepting external contributions, review and clarify the final license file.
-

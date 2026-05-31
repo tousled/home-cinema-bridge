@@ -23,15 +23,15 @@ from home_cinema_bridge.playback.ports import (
     TelevisionOutputPort,
     OppoPlaybackPort,
 )
+from lib.devices.oppo.control_api_client import OppoControlApiClient
 from lib.devices.oppo.playback_status_client import OppoPlaybackStatusClient
 
 logger = logging.getLogger(__name__)
 
 
 @deprecated(
-    "LegacyTelevisionOutput is a temporary bridge while Xnoppo.py still owns "
-    "startup wiring. Replace it with a direct TV adapter port when the legacy "
-    "entrypoint is removed."
+    "LegacyTelevisionOutput is a temporary bridge while TV startup wiring still "
+    "uses config-based adapters. Replace it with a direct TV adapter port."
 )
 class LegacyTelevisionOutput(TelevisionOutputPort):
     """
@@ -71,11 +71,29 @@ class LegacyTelevisionOutput(TelevisionOutputPort):
                 f"TV input switch failed: {type(exc).__name__}: {exc}"
             )
 
+    def return_to_app(self, app_id: str | None = None) -> DeviceCommandResult:
+        try:
+            if app_id and hasattr(self._controller, "config"):
+                self._controller.config["current_LG"] = app_id
+
+            logger.info("Returning TV to app | app_id=%s", app_id)
+            result = _run(self._controller.return_to_previous_app())
+
+            return _to_device_command_result(
+                operation="return TV to app",
+                legacy_result=_unwrap_value(result),
+            )
+        except Exception as exc:
+            logger.exception("TV app restore failed | app_id=%s", app_id)
+            return DeviceCommandResult.failed(
+                f"TV app restore failed: {type(exc).__name__}: {exc}"
+            )
+
 
 @deprecated(
-    "LegacyAvReceiverOutput is a temporary bridge while Xnoppo.py still owns "
-    "startup wiring. Replace it with a direct AV receiver adapter port when the "
-    "legacy entrypoint is removed."
+    "LegacyAvReceiverOutput is a temporary bridge while AV startup wiring still "
+    "uses config-based adapters. Replace it with a direct AV receiver adapter "
+    "port."
 )
 class LegacyAvReceiverOutput(AvReceiverOutputPort):
     """
@@ -121,6 +139,21 @@ class LegacyAvReceiverOutput(AvReceiverOutputPort):
             logger.exception("AV receiver input switch failed | input_id=%s", input_id)
             return DeviceCommandResult.failed(
                 f"AV receiver input switch failed: {type(exc).__name__}: {exc}"
+            )
+
+    def restore_tv_audio(self) -> DeviceCommandResult:
+        try:
+            logger.info("Restoring AV receiver to TV audio.")
+            result = self._receiver.restore_tv_audio()
+
+            return _to_device_command_result(
+                operation="restore AV receiver TV audio",
+                legacy_result=_unwrap_value(result),
+            )
+        except Exception as exc:
+            logger.exception("AV receiver TV audio restore failed.")
+            return DeviceCommandResult.failed(
+                f"AV receiver TV audio restore failed: {type(exc).__name__}: {exc}"
             )
 
 
@@ -171,7 +204,16 @@ class LegacyOppoMediaControlPlaybackOutput(OppoPlaybackPort):
         return self._playback.select_subtitle_track(subtitle_index)
 
     def stop_playback(self) -> DeviceCommandResult:
-        raise NotImplementedError
+        try:
+            response = OppoControlApiClient.from_config(self._config).send_remote_key(
+                "STP"
+            )
+            return DeviceCommandResult.success(f"OPPO playback stop sent: {response}")
+        except Exception as exc:
+            logger.exception("Unable to stop OPPO playback.")
+            return DeviceCommandResult.failed(
+                f"OPPO playback stop failed: {type(exc).__name__}: {exc}"
+            )
 
     def _playback_status_client(self) -> OppoPlaybackStatusClient:
         player_host = self._config["Oppo_IP"]
@@ -186,7 +228,7 @@ class LegacyOppoMediaControlPlaybackOutput(OppoPlaybackPort):
 
 @deprecated(
     "_run exists only because the current legacy TV adapter exposes async methods "
-    "to synchronous Xnoppo.py startup code."
+    "to synchronous startup orchestration."
 )
 def _run(coroutine: Any) -> Any:
     return asyncio.run(coroutine)

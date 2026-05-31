@@ -18,6 +18,10 @@ class TelevisionOutputPort(Protocol):
         """Switch the TV to the requested input id."""
         ...
 
+    def return_to_app(self, app_id: str | None = None) -> DeviceCommandResult:
+        """Return the TV to the requested app, or its remembered previous app."""
+        ...
+
 
 class AvReceiverOutputPort(Protocol):
     def power_on(self) -> DeviceCommandResult:
@@ -26,6 +30,10 @@ class AvReceiverOutputPort(Protocol):
 
     def switch_to_input(self, input_id: str) -> DeviceCommandResult:
         """Switch the AV receiver to the requested input id."""
+        ...
+
+    def restore_tv_audio(self) -> DeviceCommandResult:
+        """Restore the AV receiver to TV audio."""
         ...
 
 

@@ -28,8 +28,11 @@ class OnkyoAvReceiver(BaseAvReceiver):
             if onk_status[1] == ('standby', 'off'):
                 logging.info('Cambiamos a on')
                 receiver.command('power on')
+                receiver.disconnect()
+                self._wait_after_power_on()
+            else:
+                receiver.disconnect()
 
-            receiver.disconnect()
             return "OK"
         except Exception:
             logging.exception('Error powering on Onkyo receiver')

@@ -1,10 +1,10 @@
 import json
-import logging
 import urllib.parse
 from dataclasses import dataclass
 
 import requests
 
+from home_cinema_bridge.network.http import get_http_session
 from lib.devices.oppo.mounted_share import OppoMountedShare
 
 OPPO_HTTP_PORT = 436
@@ -248,9 +248,11 @@ class OppoControlApiClient:
         timeout: int | float | None = None,
     ) -> str:
         url = self._build_url(endpoint, query)
-        logging.debug(url)
-
-        response = requests.get(url, headers={}, timeout=timeout)
+        response = get_http_session("oppo-media-control").get(
+            url,
+            headers={},
+            timeout=timeout,
+        )
         return response.text
 
     def _call_player_endpoint_or_error(

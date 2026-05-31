@@ -9,6 +9,8 @@ from home_cinema_bridge.playback.startup.models import (
     PlaybackOutputSwitchRequest,
     PlaybackOutputSwitchResult,
     OppoPlaybackPosition,
+    PlaybackStartupRequest,
+    PlaybackStartupResult,
     OppoPlaybackState,
     OppoPlaybackStartRequest,
     OppoPlaybackStartResult,
@@ -34,14 +36,39 @@ class PlaybackStartupOrchestrator:
         self._av_receiver = av_receiver
         self._oppo_playback = oppo_playback
 
+    def start_playback(
+        self,
+        request: PlaybackStartupRequest,
+        *,
+        on_waiting: Callable[[int], None] | None = None,
+    ) -> PlaybackStartupResult:
+        output_switch_result = self.switch_playback_output_to_oppo(
+            request.output_switch_request
+        )
+        logger.info(
+            "Playback output switch result | successful=%s | tv=%s | "
+            "av_power=%s | av_input=%s",
+            output_switch_result.successful,
+            output_switch_result.tv_input_result.status.value,
+            output_switch_result.av_power_result.status.value,
+            output_switch_result.av_input_result.status.value,
+        )
+
+        oppo_start_result = self.start_oppo_playback(
+            request=request.oppo_start_request,
+            on_waiting=on_waiting,
+        )
+
+        return PlaybackStartupResult(
+            output_switch_result=output_switch_result,
+            oppo_start_result=oppo_start_result,
+        )
+
     def switch_playback_output_to_oppo(
         self,
         request: PlaybackOutputSwitchRequest,
     ) -> PlaybackOutputSwitchResult:
-        previous_tv_app_id = self._measure_output_switch_step(
-            "read_current_tv_app",
-            self._get_current_tv_app_id,
-        )
+        previous_tv_app_id = self._previous_tv_app_id(request)
         tv_input_result = self._measure_output_switch_step(
             "switch_tv_to_oppo_input",
             lambda: self._switch_tv_to_oppo_input(request),
@@ -113,6 +140,19 @@ class PlaybackStartupOrchestrator:
                 "Could not read current TV app id before switching output."
             )
             return None
+
+    def _previous_tv_app_id(self, request: PlaybackOutputSwitchRequest) -> str | None:
+        if request.previous_tv_app_id_override is not None:
+            logger.info(
+                "Using preserved TV return app for playback output switch | app_id=%s",
+                request.previous_tv_app_id_override,
+            )
+            return request.previous_tv_app_id_override
+
+        return self._measure_output_switch_step(
+            "read_current_tv_app",
+            self._get_current_tv_app_id,
+        )
 
     def _measure_output_switch_step(self, step_name: str, operation: Callable):
         started_at = time.perf_counter()

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 
 PLAYBACK_PROGRESS_INTERVAL_SECONDS = 10
+EMBY_TICKS_PER_SECOND = 10_000_000
 
 
 @dataclass(frozen=True)
@@ -169,6 +170,50 @@ class MediaServerPlaybackEventPublisher:
             payload.get("PositionTicks"),
             response.status_code,
             response.text,
+        )
+
+
+class MediaServerPlaybackProgressReporter:
+    """Reports playback-domain progress to the media server."""
+
+    def __init__(self, publisher: MediaServerPlaybackEventPublisher):
+        self._publisher = publisher
+
+    def progress(
+        self,
+        *,
+        position_seconds: int,
+        duration_seconds: int,
+        is_paused: bool = False,
+        is_muted: bool = False,
+    ):
+        return self._publisher.progress(
+            position_ticks=position_seconds * EMBY_TICKS_PER_SECOND,
+            runtime_ticks=duration_seconds * EMBY_TICKS_PER_SECOND,
+            is_paused=is_paused,
+            is_muted=is_muted,
+        )
+
+
+class MediaServerPlaybackStoppedReporter:
+    """Reports playback-domain stopped state to the media server."""
+
+    def __init__(self, publisher: MediaServerPlaybackEventPublisher):
+        self._publisher = publisher
+
+    def stopped(
+        self,
+        *,
+        position_seconds: int,
+        duration_seconds: int,
+        is_paused: bool = False,
+        is_muted: bool = False,
+    ):
+        return self._publisher.stopped(
+            position_ticks=position_seconds * EMBY_TICKS_PER_SECOND,
+            runtime_ticks=duration_seconds * EMBY_TICKS_PER_SECOND,
+            is_paused=is_paused,
+            is_muted=is_muted,
         )
 
 

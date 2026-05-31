@@ -3,12 +3,15 @@ import socket
 import time
 import shlex
 
+from home_cinema_bridge.network.tcp import LoggingTcpClient
+
 
 IAC = 255
 WILL = 251
 WONT = 252
 DO = 253
 DONT = 254
+_tcp = LoggingTcpClient(name="oppo-telnet")
 
 
 def _process_telnet_chunk(sock, chunk):
@@ -92,7 +95,7 @@ def unmount_oppo_path(*, host: str, port: int = 23, mount_path: str, debug: bool
         raise ValueError(f"Refusing to unmount unexpected OPPO path: {mount_path}")
 
     try:
-        with socket.create_connection((host, port), timeout=timeout) as session:
+        with _tcp.connect(host=host, port=port, timeout=timeout) as session:
             output = _read_until(session, b"login:", timeout)
 
             session.sendall(b"root\n")

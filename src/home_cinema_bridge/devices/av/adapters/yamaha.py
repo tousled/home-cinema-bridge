@@ -1,8 +1,7 @@
 import logging
 
-import requests
-
 from home_cinema_bridge.devices.av.base import BaseAvReceiver
+from home_cinema_bridge.network.http import get_http_session
 
 
 class YamahaAvReceiver(BaseAvReceiver):
@@ -21,20 +20,31 @@ class YamahaAvReceiver(BaseAvReceiver):
 
     def _post(self, message_data):
         url = 'http://' + self.config["AV_Ip"] + '/YamahaRemoteControl/ctrl'
-        requests.post(url, data=message_data, headers="")
+        get_http_session("yamaha-av").post(url, data=message_data, headers="")
         return "OK"
 
     def power_on(self):
         logging.info('Llamada a av_power_on')
-        return self._post(
+        result = self._post(
             '<YAMAHA_AV cmd="PUT"><System><Power_Control><Power>On</Power></Power_Control></System></YAMAHA_AV>'
         )
+        self._wait_after_power_on()
+        return result
 
     def change_hdmi(self):
         logging.info('Llamada a av_change_hdmi')
         return self._post(
             '<Main_Zone><Input><Input_Sel>' + self.config["AV_Input"] + '</Input_Sel></Input></Main_Zone>'
         )
+
+    def restore_tv_audio(self):
+        tv_input = self.config.get("AV_TV_Input")
+        if tv_input:
+            logging.info("Restoring Yamaha to TV audio input | input=%s", tv_input)
+            return self._post(
+                f'<Main_Zone><Input><Input_Sel>{tv_input}</Input_Sel></Input></Main_Zone>'
+            )
+        super().restore_tv_audio()
 
     def power_off(self):
         logging.info('Llamada a av_power_off')

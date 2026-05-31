@@ -5,7 +5,7 @@ from pathlib import Path
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from home_cinema_bridge.devices.tv.factory import get_supported_tv_models
-from lib.Xnoppo import (
+from lib.oppo_control import (
     check_socket,
     sendnotifyremote,
     getmainfirmwareversion,
@@ -37,7 +37,6 @@ from lib.config_manager import (
 import requests
 from lib.Emby_ws import XnoppoWs
 from lib.Emby_http import EmbyHttp
-from lib.devices.oppo.control_api_activation import OppoControlApiActivator
 
 import shutil
 import threading
@@ -48,100 +47,14 @@ import sys
 from home_cinema_bridge.devices.av.factory import get_supported_av_models
 
 
-WATCHDOG_INTERVAL_SECONDS = 5
-OPPO_WATCHDOG_CHECK_INTERVAL_SECONDS = 30
-
-WATCHDOG_IDLE_STATES = {"Free", "Not_Connected", "Stopped"}
-WATCHDOG_STARTUP_STATES = {"Loading", "Iniciando", "Starting"}
-
-
 def get_version():
-    return "2.03"
+    return "0.5.0"
 
 
 def thread_function(ws_object):
     print("Thread: starting")
     ws_object.start()
     print("Thread: finishing")
-
-
-def watchdog_function(ws_object, config):
-    """
-    Vigila que el estado del script no se quede huérfano.
-
-    Comprueba 2 cosas:
-    1. Si el OPPO desaparece mientras hay una reproducción/transición activa.
-    2. Si la app se queda demasiado tiempo esperando el inicio de reproducción.
-
-    El OPPO solo se comprueba cuando hay una reproducción o transición activa.
-    En estado idle no tiene sentido consultar el puerto cada pocos segundos.
-    """
-    tiempo_atascado = 0
-    last_oppo_availability_check = 0
-
-    while True:
-        time.sleep(WATCHDOG_INTERVAL_SECONDS)
-
-        try:
-            if not hasattr(ws_object, "EmbySession") or not hasattr(
-                ws_object.EmbySession, "playstate"
-            ):
-                continue
-
-            estado_actual = ws_object.EmbySession.playstate
-
-            if estado_actual in WATCHDOG_IDLE_STATES:
-                tiempo_atascado = 0
-                continue
-
-            now = time.monotonic()
-
-            should_check_oppo = (
-                now - last_oppo_availability_check
-                >= OPPO_WATCHDOG_CHECK_INTERVAL_SECONDS
-            )
-
-            if should_check_oppo:
-                last_oppo_availability_check = now
-                oppo_control_api_activator_client = OppoControlApiActivator.from_config(
-                    config
-                )
-                oppo_control_api_activation_result = (
-                    oppo_control_api_activator_client.check_control_api_availability()
-                )
-
-                if not oppo_control_api_activation_result.available:
-                    logging.warning(
-                        "Watchdog: OPPO unavailable while playstate=%s | host=%s | port=%s | error=%s",
-                        estado_actual,
-                        oppo_control_api_activator_client.host,
-                        oppo_control_api_activator_client.control_api_port,
-                        oppo_control_api_activation_result.error,
-                    )
-                    ws_object.EmbySession.playstate = "Free"
-                    ws_object.EmbySession.playedtitle = ""
-                    ws_object.EmbySession.filename = ""
-                    tiempo_atascado = 0
-                    continue
-
-            if estado_actual in WATCHDOG_STARTUP_STATES:
-                tiempo_atascado += WATCHDOG_INTERVAL_SECONDS
-                max_timeout = config.get("timeout_oppo_playitem", 60)
-
-                if tiempo_atascado > max_timeout:
-                    logging.warning(
-                        "Watchdog: playback startup stuck for more than %ss. Resetting state to Free.",
-                        max_timeout,
-                    )
-                    ws_object.EmbySession.playstate = "Free"
-                    ws_object.EmbySession.playedtitle = ""
-                    ws_object.EmbySession.filename = ""
-                    tiempo_atascado = 0
-            else:
-                tiempo_atascado = 0
-
-        except Exception:
-            logging.debug("Watchdog error", exc_info=True)
 
 
 def restart():
@@ -355,7 +268,11 @@ def test_path(config, server):
         test_media_path = _build_test_media_path(server)
         rutas = get_mount_path(test_media_path, server)
     except ValueError as exc:
-        logging.warning("Invalid path test configuration: %s", exc)
+        logging.warning(
+            "Invalid path test configuration: %s | payload=%s",
+            exc,
+            server,
+        )
         return str(exc)
 
     result2 = test_mount_path(config, rutas["Servidor"], rutas["Carpeta"])
@@ -1140,14 +1057,6 @@ if __name__ == "__main__":
         print(
             "Config is not complete yet. Web UI is available; Emby websocket will not start."
         )
-
-    if config_ready:
-        # Arrancamos el Perro Guardián para evitar estados congelados
-        w = threading.Thread(target=watchdog_function, args=(emby_wsocket, config))
-        w.daemon = True
-        w.start()
-    else:
-        print("Watchdog will not start until configuration is complete.")
 
     espera = 0
     estado_anterior = ""

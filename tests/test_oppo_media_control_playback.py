@@ -15,9 +15,15 @@ from lib.devices.oppo.playback_state_waiter import PlaybackStartupWaitResult
 
 
 class RecordingMediaControlClient:
-    def __init__(self, *, device_sub_type="nfs"):
+    def __init__(
+        self,
+        *,
+        device_sub_type="nfs",
+        mount_nfs_response='{"success":true,"nfsMntPath":"/mnt/nfs1"}',
+    ):
         self.calls = []
         self.device_sub_type = device_sub_type
+        self.mount_nfs_response = mount_nfs_response
 
     def sign_in(self):
         self.calls.append("sign_in")
@@ -37,7 +43,7 @@ class RecordingMediaControlClient:
 
     def mount_nfs_folder(self, *, server, folder, timeout):
         self.calls.append(("mount_nfs_folder", server, folder, timeout))
-        return '{"success":true,"nfsMntPath":"/mnt/nfs1"}'
+        return self.mount_nfs_response
 
     def mount_samba_folder(self, *, server, folder, timeout):
         self.calls.append(("mount_samba_folder", server, folder, timeout))
@@ -173,6 +179,103 @@ class OppoMediaControlPlaybackTest(unittest.TestCase):
             ],
             client.calls,
         )
+
+    def test_treats_optical_mount_failure_as_success_when_oppo_reports_active(self):
+        client = RecordingMediaControlClient(
+            mount_nfs_response='{"success":false,"retInfo":"failed"}',
+        )
+        playback = OppoMediaControlPlayback(
+            {
+                "default_nfs": True,
+                "timeout_oppo_mount": 30,
+                "timeout_oppo_playitem": 30,
+            },
+            client=client,
+            playback_state_waiter=_started_playback,
+        )
+
+        result = playback.start_playback(
+            OppoPlaybackStartRequest(
+                media_location=PlayerMediaFileLocation(
+                    content_server="NAS",
+                    content_directory="Movies",
+                    playback_file_name="Movie.iso",
+                    playback_file_format="blurayiso",
+                )
+            )
+        )
+
+        self.assertTrue(result.successful)
+        self.assertIsNone(result.mounted_path)
+        self.assertEqual(
+            "Mount request failed, but OPPO reported active playback.",
+            result.detail,
+        )
+        self.assertEqual(
+            [
+                "sign_in",
+                "get_device_list",
+                ("login_nfs_server", "NAS"),
+                ("mount_nfs_folder", "NAS", "Movies", 30),
+            ],
+            client.calls,
+        )
+
+    def test_treats_optical_mount_timeout_as_success_when_oppo_reports_active(self):
+        client = RecordingMediaControlClient(
+            mount_nfs_response='{"success":false,"retInfo":"Timeout in Mount Request"}',
+        )
+        playback = OppoMediaControlPlayback(
+            {
+                "default_nfs": True,
+                "timeout_oppo_mount": 30,
+                "timeout_oppo_playitem": 30,
+            },
+            client=client,
+            playback_state_waiter=_started_playback,
+        )
+
+        result = playback.start_playback(
+            OppoPlaybackStartRequest(
+                media_location=PlayerMediaFileLocation(
+                    content_server="NAS",
+                    content_directory="Movies",
+                    playback_file_name="Movie.iso",
+                    playback_file_format="blurayiso",
+                )
+            )
+        )
+
+        self.assertTrue(result.successful)
+
+    def test_keeps_non_optical_mount_timeout_as_failure(self):
+        client = RecordingMediaControlClient(
+            mount_nfs_response='{"success":false,"retInfo":"Timeout in Mount Request"}',
+        )
+        playback = OppoMediaControlPlayback(
+            {
+                "default_nfs": True,
+                "timeout_oppo_mount": 30,
+                "timeout_oppo_playitem": 30,
+            },
+            client=client,
+            playback_state_waiter=_started_playback,
+        )
+
+        result = playback.start_playback(
+            OppoPlaybackStartRequest(
+                media_location=PlayerMediaFileLocation(
+                    content_server="NAS",
+                    content_directory="Movies",
+                    playback_file_name="Movie.mkv",
+                    playback_file_format="mkv",
+                )
+            )
+        )
+
+        self.assertFalse(result.successful)
+        self.assertFalse(result.media_mounted)
+        self.assertEqual("Timeout in Mount Request", result.detail)
 
     def test_reads_playback_position_from_media_control_endpoint(self):
         client = RecordingMediaControlClient()

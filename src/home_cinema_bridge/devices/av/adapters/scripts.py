@@ -11,6 +11,7 @@ class ScriptsAvReceiver(BaseAvReceiver):
     def power_on(self):
         logging.info('Llamada a av_power_on')
         subprocess.Popen(self.config["AV_CMD_POW_ON"])
+        self._wait_after_power_on()
         return "OK"
 
     def change_hdmi(self):

@@ -3,6 +3,8 @@ import socket
 import time
 from dataclasses import dataclass
 
+from home_cinema_bridge.network.tcp import LoggingTcpClient
+
 
 OPPO_CONTROL_API_PORT = 436
 OPPO_REMOTE_LOGIN_PORT = 7624
@@ -39,6 +41,7 @@ class OppoControlApiActivator:
         self.control_api_port = control_api_port
         self.remote_login_port = remote_login_port
         self.timeout_seconds = timeout_seconds
+        self._tcp = LoggingTcpClient(name="oppo-control-api")
 
     @classmethod
     def from_config(cls, config: dict) -> "OppoControlApiActivator":
@@ -50,16 +53,17 @@ class OppoControlApiActivator:
 
     def check_control_api_availability(self) -> OppoControlApiActivationResult:
         try:
-            with socket.create_connection(
-                    (self.host, self.control_api_port),
-                    timeout=self.timeout_seconds,
-            ):
-                return OppoControlApiActivationResult(
-                    available=True,
-                    host=self.host,
-                    port=self.control_api_port,
-                    attempts=1,
-                )
+            self._tcp.check_connection(
+                host=self.host,
+                port=self.control_api_port,
+                timeout=self.timeout_seconds,
+            )
+            return OppoControlApiActivationResult(
+                available=True,
+                host=self.host,
+                port=self.control_api_port,
+                attempts=1,
+            )
         except OSError as exc:
             return OppoControlApiActivationResult(
                 available=False,

@@ -5,12 +5,12 @@ from home_cinema_bridge.playback.startup.models import (
     OppoPlaybackStartRequest,
     OppoPlaybackStartResult,
     OppoPlaybackState,
+    PlaybackStartupRequest,
+    PlaybackStartupResult,
     PlaybackOutputSwitchRequest,
     PlaybackOutputSwitchResult,
     PlayerMediaFileLocation,
 )
-from home_cinema_bridge.playback.startup.orchestrator import PlaybackStartupOrchestrator
-
 __all__ = [
     "DeviceCommandResult",
     "DeviceCommandStatus",
@@ -18,8 +18,9 @@ __all__ = [
     "OppoPlaybackStartRequest",
     "OppoPlaybackStartResult",
     "OppoPlaybackState",
+    "PlaybackStartupRequest",
+    "PlaybackStartupResult",
     "PlaybackOutputSwitchRequest",
     "PlaybackOutputSwitchResult",
-    "PlaybackStartupOrchestrator",
     "PlayerMediaFileLocation",
 ]

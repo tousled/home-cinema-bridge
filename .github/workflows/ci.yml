@@ -35,7 +35,7 @@ jobs:
 
       - name: Check undefined Python names
         run: |
-          python -m ruff check lib/devices/oppo lib/Xnoppo.py xnoppo_web.py tools/oppo_qpl_probe.py tests --select F821
+          python -m ruff check lib/devices/oppo lib/oppo_control.py xnoppo_web.py tools/oppo_qpl_probe.py tests --select F821
 
       - name: Run unit tests
         run: |

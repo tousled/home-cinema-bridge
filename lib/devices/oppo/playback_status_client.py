@@ -1,5 +1,3 @@
-import socket
-import time
 from dataclasses import dataclass
 
 from home_cinema_bridge.devices.oppo.playback_state import (
@@ -8,6 +6,7 @@ from home_cinema_bridge.devices.oppo.playback_state import (
     OppoPlaybackStatus,
     parse_oppo_playback_status,
 )
+from home_cinema_bridge.network.tcp import LoggingTcpClient
 
 
 @dataclass(frozen=True)
@@ -32,6 +31,7 @@ class OppoPlaybackStatusClient:
         self.host = host
         self.port = port
         self.timeout = timeout
+        self._tcp = LoggingTcpClient(name="oppo-status")
 
     def query_power_state(self) -> OppoCommandResult:
         return self.query("QPW")
@@ -53,32 +53,14 @@ class OppoPlaybackStatusClient:
         )
 
     def _send(self, payload: bytes) -> str:
-        with socket.create_connection((self.host, self.port), timeout=self.timeout) as sock:
-            sock.settimeout(self.timeout)
-            sock.sendall(payload)
-
-            chunks: list[bytes] = []
-            started = time.monotonic()
-
-            while time.monotonic() - started < self.timeout:
-                try:
-                    chunk = sock.recv(1024)
-                except socket.timeout:
-                    break
-
-                if not chunk:
-                    break
-
-                chunks.append(chunk)
-
-                # OPPO responses are short, e.g. "@OK PLAY".
-                # Stop as soon as we get a complete-looking response instead of waiting
-                # for the socket timeout on every sample.
-                decoded = b"".join(chunks).decode("utf-8", errors="replace")
-                if decoded.strip().startswith("@OK"):
-                    break
-
-        return b"".join(chunks).decode("utf-8", errors="replace").strip()
+        return self._tcp.request(
+            host=self.host,
+            port=self.port,
+            payload=payload,
+            timeout=self.timeout,
+            encoding="utf-8",
+            complete=lambda response: response.strip().startswith("@OK"),
+        )
 
     @staticmethod
     def _normalize_command(command: str) -> bytes:

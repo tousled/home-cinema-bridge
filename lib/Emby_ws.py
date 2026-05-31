@@ -18,10 +18,22 @@ import threading
 from websocket import WebSocketApp
 import logging
 import json
-import time
 from .Emby_http import EmbyHttp
-from lib.playback_manager import PlaybackManager
-from .Xnoppo import *
+from home_cinema_bridge.media_servers.emby.playback_command_handler import (
+    EmbyPlaybackCommandHandler,
+)
+from home_cinema_bridge.media_servers.emby.session_events import (
+    build_playback_intent_from_session,
+    describe_session_playback_source,
+    find_monitored_session,
+)
+from home_cinema_bridge.playback.dispatch import (
+    PlaybackIntentDispatcher,
+    bridge_playback_is_active,
+)
+from home_cinema_bridge.playback.application import PlaybackApplicationService
+from home_cinema_bridge.playback.intent import PlaybackOrigin
+
 
 class XnoppoWs(threading.Thread):
     emby_state=''
@@ -42,39 +54,10 @@ class XnoppoWs(threading.Thread):
     def __init__(self):
 
         self.emby_state='Init'
+        self.playback_application_service = None
+        self.playback_command_handler = None
         threading.Thread.__init__(self)
         logging.info('Ws:Fin init\n')
-
-    def thread_function_play(self, data, scripterx=False):
-        print("Thread Play: starting")
-
-        # --- INICIO BLOQUE ROBUSTO (Gestión de Errores LG/OPPO) ---
-        try:
-            # 1. Instanciamos el Manager con la configuración actual
-            manager = PlaybackManager(self.ws_config)
-
-            # 2. Espera Activa: No intentamos reproducir hasta que el OPPO tenga red
-            # Esto soluciona el fallo cuando la TV LG envía la orden demasiado rápido
-            is_online = manager.wait_for_oppo_network()
-
-            if is_online:
-                # 3. Despertar / Handshake HDMI
-                # Enviamos tecla 'EJT' (Eject) o similar para asegurar que sale del reposo
-                # Usamos sendremotekey importado de .Xnoppo
-                if self.ws_config.get("DebugLevel", 0) > 0: print("Despertando OPPO...")
-                sendremotekey("EJT", self.ws_config)
-                time.sleep(2)  # Damos tiempo al OPPO para procesar el despertar
-            else:
-                print("ADVERTENCIA: OPPO no responde a la red. Intentando reproducción de todas formas...")
-
-        except Exception as e:
-            print(f"Error en el pre-chequeo de PlaybackManager: {e}")
-            # No bloqueamos el flujo si falla el manager, intentamos reproducir igual
-        # --- FIN BLOQUE ROBUSTO ---
-
-        playto_file(self.EmbySession, data, scripterx)
-        self.reload_config()
-        print("Thread Play: finishing")
 
     def set_lang(self,lang):
         self.ws_lang=lang
@@ -127,39 +110,10 @@ class XnoppoWs(threading.Thread):
         return(config)
 
     def _play(self, data):
-        command = data['PlayCommand']
-        if command == 'PlayNow':
-            #self.EmbySession.playnow(data)
-            if self.EmbySession.playstate=="Loading" or self.EmbySession.playstate=="Replay":
-                if self.ws_config["DebugLevel"]>0: print("Esta en la pantalla de Loading, tenemos que esperar")
-                timeout=60
-                time=0
-                while self.EmbySession.playstate=="Loading" or time>timeout:
-                    time.sleep(3)
-                    time=time+3
-            if self.EmbySession.playstate=="Playing":
-                if self.ws_config["DebugLevel"]>0: print("ya se esta reproduciendo algo")
-                playother(self.EmbySession,data,False)
-            else:
-                x = threading.Thread(target=self.thread_function_play, args=(data,))
-                x.start()
+        self.playback_command_handler.handle_play(data)
 
     def _general_commands(self,data):
-        cmd = data['Name']
-        args = data['Arguments']
-        #print(cmd)
-        #print(args)
-        if cmd == 'SetAudioStreamIndex':
-            params = self.EmbySession.process_data(self.EmbySession.currentdata)
-            audio_index = self.EmbySession.get_xnoppo_audio_index(params["ControllingUserId"],params["item_id"],int(args['Index']))
-            setaudiotrack(self.ws_config,audio_index)
-            self.EmbySession.currentdata["AudioStreamIndex"]=int(args['Index'])
-        elif cmd == 'SetSubtitleStreamIndex':
-            params = self.EmbySession.process_data(self.EmbySession.currentdata)
-            subs_index = self.EmbySession.get_xnoppo_subs_index(params["ControllingUserId"],params["item_id"],int(args['Index']))
-            set_subtitles_track(self.ws_config, subs_index)
-            self.EmbySession.currentdata["SubtitleStreamIndex"]=int(args['Index'])
-        #elif cmd == 'SetVolume'
+        self.playback_command_handler.handle_general_command(data)
 
     def _check_state(self, data, sessions):
         if self.ws_config["MonitoredDevice"]:
@@ -170,30 +124,29 @@ class XnoppoWs(threading.Thread):
                 if self.ws_config.get("DebugLevel", 0) > 1:
                     print(f"Ws:Checking sessions for monitored device | sessions={len(data)}")
 
-                for item in data:
-                    if item["DeviceId"] == self.ws_config["MonitoredDevice"]:
-                        item_data = item
-                        try:
-                            now_playing = item_data.get("NowPlayingItem")
-                            if now_playing:
-                                item_data_list = self.EmbySession.get_item_info(
-                                    item_data["UserId"],
-                                    now_playing["Id"]
-                                )
+                item_data = find_monitored_session(
+                    data,
+                    self.ws_config["MonitoredDevice"],
+                )
+                try:
+                    now_playing = item_data.get("NowPlayingItem") if item_data else None
+                    if now_playing:
+                        item_data_list = self.EmbySession.get_item_info(
+                            item_data["UserId"],
+                            now_playing["Id"]
+                        )
 
-                                if self.ws_config.get("DebugLevel", 0) > 0:
-                                    print(
-                                        "Ws:Monitored item detected | "
-                                        f"device={item_data.get('DeviceName')} | "
-                                        f"title={now_playing.get('Name')} | "
-                                        f"type={now_playing.get('Type')} | "
-                                        f"container={now_playing.get('Container')}"
-                                    )
-                            break
-                        except Exception as e:
-                            if self.ws_config.get("DebugLevel", 0) > 0:
-                                print(f"Ws:Could not load monitored item details: {e}")
-                            break
+                        if self.ws_config.get("DebugLevel", 0) > 0:
+                            print(
+                                "Ws:Monitored item detected | "
+                                f"device={item_data.get('DeviceName')} | "
+                                f"title={now_playing.get('Name')} | "
+                                f"type={now_playing.get('Type')} | "
+                                f"container={now_playing.get('Container')}"
+                            )
+                except Exception as e:
+                    if self.ws_config.get("DebugLevel", 0) > 0:
+                        print(f"Ws:Could not load monitored item details: {e}")
             else:
                 item_data = self.EmbySession.get_session_user_info(
                     data["UserId"],
@@ -258,63 +211,58 @@ class XnoppoWs(threading.Thread):
                                 userdatalist = data["UserDataList"]
                                 userdata = userdatalist[0]
 
-                            try:
-                                playstate = item_data["PlayState"]
-                            except:
-                                playstate = {}
-
-
-                            requested_start_ticks = playstate.get("PositionTicks")
-                            data2 = {
-                                "ItemIds": [int(item_data["NowPlayingItem"]["Id"])],
-                                "StartIndex": 0,
-                                "MediaSourceId": playstate.get("MediaSourceId", ""),
-                                "AudioStreamIndex": playstate.get(
-                                    "AudioStreamIndex", 1
-                                ),
-                                "SubtitleStreamIndex": playstate.get(
-                                    "SubtitleStreamIndex", -1
-                                ),
-                                "ControllingUserId": item_data["UserId"],
-                                "SessionID": item_data["Id"],
-                                "DeviceName": item_data["DeviceName"],
-                                "Device_Id": self.ws_config["MonitoredDevice"],
-                            }
-
-                            if requested_start_ticks is not None:
-                                data2["StartPositionTicks"] = requested_start_ticks
-                            else:
-                                data2["SavedPlaybackPositionTicks"] = userdata.get(
-                                    "PlaybackPositionTicks", 0
-                                )
-
+                            playback_source = describe_session_playback_source(
+                                item_data,
+                                item_info=item_data_list,
+                                item_user_data=userdata,
+                            )
+                            logging.info(
+                                "Emby monitored playback source | "
+                                "item_id=%s | name=%s | item_type=%s | "
+                                "item_container=%s | item_video_type=%s | "
+                                "media_source_id=%s | media_source_container=%s | "
+                                "media_source_video_type=%s | "
+                                "session_position_present=%s | "
+                                "session_position_ticks=%s | "
+                                "saved_position_ticks=%s | played=%s | "
+                                "play_count=%s | played_percentage=%s | "
+                                "audio_stream_index=%s | subtitle_stream_index=%s",
+                                playback_source["item_id"],
+                                playback_source["item_name"],
+                                playback_source["item_type"],
+                                playback_source["item_container"],
+                                playback_source["item_video_type"],
+                                playback_source["media_source_id"],
+                                playback_source["media_source_container"],
+                                playback_source["media_source_video_type"],
+                                playback_source["session_position_ticks_present"],
+                                playback_source["session_position_ticks"],
+                                playback_source["saved_position_ticks"],
+                                playback_source["played"],
+                                playback_source["play_count"],
+                                playback_source["playback_percentage"],
+                                playback_source["audio_stream_index"],
+                                playback_source["subtitle_stream_index"],
+                            )
+                            playback_intent = build_playback_intent_from_session(
+                                item_data,
+                                monitored_device_id=self.ws_config["MonitoredDevice"],
+                                item_user_data=userdata,
+                            )
                             if self.ws_config.get("DebugLevel", 0) > 0:
                                 print(
                                     "Ws:Preparing playback handoff | "
-                                    f"item_id={data2['ItemIds'][0]} | "
-                                    f"device={data2['DeviceName']} | "
-                                    f"start_ticks={data2['StartPositionTicks']} | "
-                                    f"audio={data2['AudioStreamIndex']} | "
-                                    f"subtitle={data2['SubtitleStreamIndex']}"
+                                    f"item_id={playback_intent.media_item_id} | "
+                                    f"device={playback_intent.source_device_name} | "
+                                    f"start_seconds={playback_intent.start_position_seconds} | "
+                                    f"audio={playback_intent.selected_audio_track_id} | "
+                                    f"subtitle={playback_intent.selected_subtitle_track_id}"
                                 )
 
-                            timeout = 60
-                            elapsed = 0
-                            while self.EmbySession.playstate == "Loading" or elapsed > timeout:
-                                time.sleep(3)
-                                elapsed = elapsed + 3
-
-                            if self.EmbySession.playstate == "Playing" or self.EmbySession.playstate == "Replay":
-                                if self.ws_config["DebugLevel"] > 0:
-                                    print("ya se esta reproduciendo algo")
-                                playother(self.EmbySession, data2, True)
-                            else:
-                                x = threading.Thread(
-                                    target=self.thread_function_play,
-                                    args=(data2, True)
-                                )
-                                x.start()
-
+                            self._playback_intent_dispatcher().dispatch(
+                                playback_intent,
+                                origin=PlaybackOrigin.OBSERVED_TV_CLIENT,
+                            )
                             return 0
                         else:
                             if self.ws_config["DebugLevel"] > 0:
@@ -346,6 +294,15 @@ class XnoppoWs(threading.Thread):
 
             except:
                 if self.MonitoredState != '':
+                    if bridge_playback_is_active(self.EmbySession.playstate):
+                        logging.info(
+                            "Keeping monitored state during bridge playback | "
+                            "monitored_state=%s | playstate=%s",
+                            self.MonitoredState,
+                            self.EmbySession.playstate,
+                        )
+                        return 0
+
                     if self.ws_config["DebugLevel"] > 0:
                         print('Stopped Playing')
                     if self.ws_config["DebugLevel"] > 0 and item_data:
@@ -354,27 +311,13 @@ class XnoppoWs(threading.Thread):
                         print(self.MonitoredState)
                     self.MonitoredState = ''
 
+    def _playback_intent_dispatcher(self):
+        return PlaybackIntentDispatcher(
+            playback_application_service=self.playback_application_service,
+        )
+
     def _playstate(self, data):
-        command = data['Command']
-        if command == 'Stop':
-            sendremotekey('STP',self.ws_config)
-        elif command == 'Pause':
-            sendremotekey('PAU',self.ws_config)
-        elif command == 'Unpause':
-            sendremotekey('PLA',self.ws_config)
-        elif command == 'NextTrack':
-            sendremotekey('NXT',self.ws_config)
-        elif command == 'PreviousTrack':
-            sendremotekey('PRE',self.ws_config)
-        elif command == 'Seek':
-            playticks=data["SeekPositionTicks"]
-            setplaytime(self.ws_config,playticks)
-        elif command == 'Rewind':
-            sendremotekey('REV',self.ws_config)
-        elif command == 'FastForward':
-            sendremotekey('FWD',self.ws_config)
-        elif command == 'PlayPause':
-            sendremotekey('PAU',self.ws_config)
+        self.playback_command_handler.handle_playstate(data)
 
     def on_message(self, ws, msg):
         msg_json = json.loads(msg)
@@ -431,6 +374,15 @@ class XnoppoWs(threading.Thread):
         self.EmbySession.lang=self.ws_lang
         self.ws_user_info = self.EmbySession.user_info
         self.EmbySession.set_capabilities()
+        self.playback_application_service = PlaybackApplicationService(
+            playback_session=self.EmbySession,
+            reload_config=self.reload_config,
+        )
+        self.playback_command_handler = EmbyPlaybackCommandHandler(
+            emby_session=self.EmbySession,
+            config_provider=lambda: self.ws_config,
+            playback_intent_dispatcher_factory=self._playback_intent_dispatcher,
+        )
         uri = self.ws_config["emby_server"].replace('http://', 'ws://').replace('https://', 'wss://')
         uri = uri + '/?api_key=' + self.ws_user_info["AccessToken"] + '&deviceId=''Xnoppo'''
         #uri = uri + '/?api_key=' + self.ws_user_info["AccessToken"] + '&deviceId={}'

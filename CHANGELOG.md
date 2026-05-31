@@ -6,6 +6,118 @@ The format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.
 
 > This fork is currently in pre-1.0 modernization. Versions `0.x` may introduce breaking changes while the legacy architecture is progressively replaced.
 
+## [0.5.0] - 2026-05-31
+
+### Added
+
+- Added a parent playback orchestrator that coordinates startup, post-start
+  completion, during-playback monitoring, finish, and centralized error
+  recovery.
+- Added a dedicated during-playback orchestrator based on OPPO QPL state
+  observation and OPPO MediaControl playback time.
+- Added a finish orchestrator that reports the final playback position to Emby,
+  waits for OPPO to settle into an idle state, returns the LG TV to the correct
+  app, and restores AV receiver TV audio.
+- Added centralized playback error recovery that can stop OPPO playback with
+  `STP` before restoring TV and AV outputs.
+- Added active-playback replacement support: requesting another item while one
+  is playing now stops the current parent flow, waits for a clean finish, and
+  then starts the replacement item through the same orchestrated flow.
+- Added explicit playback origins for observed TV-client playback and remote
+  Emby control commands.
+- Added an Emby playback command handler for PlayNow, pause/unpause, stop,
+  chapter navigation, audio/subtitle changes, absolute seek, and 10-second
+  forward/back remote seek commands.
+- Added transport-level HTTP/TCP diagnostics with compact successful-response
+  logging and richer failure logging.
+- Added OPPO MediaControl handling for optical image startup cases where the
+  mount endpoint fails or times out but OPPO later reports active playback.
+- Added tests for playback orchestration, replacement, OPPO startup/finish,
+  Emby playback command translation, and error recovery.
+
+### Changed
+
+- Replaced the legacy `lib/Xnoppo.py` playback entry point with cleaner
+  playback application/orchestration modules.
+- Reworked playback startup so OPPO MediaControl startup, TV input switching,
+  AV input switching, resume, audio selection, and subtitle selection are
+  coordinated through the new playback flow.
+- Replaced the legacy `getglobalinfo` string loop for active playback with QPL
+  state monitoring.
+- Changed Emby progress handling to observe OPPO frequently for local stop
+  detection while throttling Emby `Progress` check-ins to the media-server
+  lifecycle interval.
+- Changed active replacement stop semantics to use OPPO `STP` as the playback
+  close command for all media types, including ISO/Blu-ray cases.
+- Changed replacement finish semantics so the old item reports stopped and
+  confirms OPPO idle state without restoring TV/AV outputs before the
+  replacement item starts.
+- Changed TV app restoration during replacements so the original non-HDMI app is
+  preserved across the whole room playback flow instead of being overwritten by
+  the intermediate OPPO HDMI input.
+- Changed Emby playback status messages to target the active source/control
+  session instead of broadcasting messages to every user session.
+- Updated the web-reported application version to `0.5.0`.
+
+### Fixed
+
+- Fixed `bd_is_playing` and duplicate replay failures caused by legacy
+  `playother`/replay paths remounting while OPPO was already playing.
+- Fixed normal stop after replacement returning the LG TV to HDMI instead of the
+  Emby app.
+- Fixed a UX issue where replacement temporarily returned LG/Denon to TV before
+  the replacement item started.
+- Fixed replacement startup being attempted before OPPO had confirmed an idle
+  state after stopping the active item.
+- Fixed finish success reporting so OPPO idle-confirmation failure makes the
+  finish result unsuccessful.
+- Fixed intermittent startup/finish failures leaving OPPO active by adding
+  OPPO stop handling to centralized error recovery.
+- Fixed remote seek from Emby mobile/web clients so relative seek changes OPPO
+  position instead of restarting playback.
+- Fixed direct Emby stop commands to send OPPO `STP` instead of home/navigation
+  commands.
+- Fixed stale LG monitored-session snapshots triggering duplicate playback
+  requests while bridge-owned playback was already loading or playing.
+
+### Removed
+
+- Removed `lib/Xnoppo.py`.
+- Removed legacy `playto_file` and `playother` playback paths.
+- Removed the legacy web watchdog that mutated playback state outside the
+  orchestrated playback flow.
+- Removed legacy Emby `/Sessions/{session}/Viewing` reporting from the active
+  playback path.
+- Removed unused legacy OPPO helpers that were no longer referenced by
+  productive code.
+
+### Validated
+
+- Validated MKV playback from the LG Emby app.
+- Validated ISO / Full Blu-ray playback from remote Emby control.
+- Validated MKV -> ISO replacement.
+- Validated ISO -> MKV replacement when OPPO MediaControl mount state was
+  healthy.
+- Validated final stop after replacement returning LG to `com.emby.app` and
+  Denon to `SITV`.
+- Validated pause, chapter navigation, absolute seek, and 10-second
+  forward/back seek from the Emby mobile/web controller.
+- Validated preservation of the last valid OPPO playback position when
+  `getplayingtime` returns transient zero values during stop/transition.
+
+### Notes
+
+- OPPO MediaControl can still enter a stale NFS mount state after some
+  ISO/Blu-ray replacement flows. Command-level recovery attempts tested so far
+  did not restore mounting; rebooting/power-cycling OPPO remains the only
+  proven recovery for that specific device-side stale state.
+- Startup timing improved mainly by removing legacy replay/remount paths,
+  duplicate attempts, and redundant OPPO calls. Exact before/after timing should
+  be measured later from comparable runs on `main` and `develop`; current logs
+  are not a controlled benchmark.
+- The legacy web configuration/remote-control surface still contains OPPO
+  diagnostic flows that should be modernized separately.
+
 ## [0.4.0] - 2026-05-23
 
 ### Added

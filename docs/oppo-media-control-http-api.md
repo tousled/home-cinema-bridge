@@ -13,7 +13,8 @@ mounting, file playback, subtitle menu handling, and playback progress data.
 ## Sources
 
 - Project implementation: `lib/devices/oppo/control_api_client.py`,
-  `lib/Xnoppo.py`.
+  `src/home_cinema_bridge/devices/oppo/media_control_playback.py`, and the
+  playback orchestration modules under `src/home_cinema_bridge/playback`.
 - Runtime validation from Docker container logs on 2026-05-30.
 - Public reverse-engineering notes:
     - <https://xiaohai.co/oppo-udp-203-control-protocol/>
@@ -87,6 +88,10 @@ Important behaviour:
   `success:false` while still having useful side effects on the OPPO.
 - `mountNfsSharedFolder` can return `{}` even when the mount succeeded. The
   project normalizes this to a successful response for compatibility.
+- For optical image playback, `mountNfsSharedFolder` can fail or time out while
+  the OPPO continues processing and later reports active playback through QPL.
+  The current OPPO playback adapter reconciles that case by checking the real
+  player state before treating startup as failed.
 - `getplayingtime` can temporarily return zero values during startup, disc/menu
   transitions, and immediately after stop. Do not overwrite a known nonzero
   Emby progress value just because a transient OPPO response says `0`.

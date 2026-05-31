@@ -24,10 +24,6 @@ def get_supported_av_models():
     return sorted(AV_RECEIVERS.keys())
 
 
-def is_supported_av_model(model):
-    return normalize_av_model(model) in AV_RECEIVERS
-
-
 def create_av_receiver(config):
     model = normalize_av_model(config.get("AV_model"))
     receiver_class = AV_RECEIVERS.get(model)

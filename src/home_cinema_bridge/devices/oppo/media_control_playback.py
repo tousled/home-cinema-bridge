@@ -14,6 +14,7 @@ from home_cinema_bridge.playback.startup.models import (
     OppoPlaybackStartRequest,
     OppoPlaybackStartResult,
     OppoPlaybackState,
+    PlayerMediaFileLocation,
 )
 from lib.devices.oppo.control_api_client import OppoControlApiClient
 from lib.devices.oppo.mounted_share import parse_mounted_share_response
@@ -85,6 +86,12 @@ class OppoMediaControlPlayback:
 
             self._login_network_server(network_folder)
             mount_response_text = self._mount_network_folder(network_folder)
+            logger.info(
+                "OPPO MediaControl mount response | server=%s | folder=%s | response=%s",
+                network_folder.media_server,
+                network_folder.folder,
+                mount_response_text,
+            )
             mount_response, mounted_share = parse_mounted_share_response(
                 mount_response_text,
                 server=network_folder.media_server,
@@ -93,6 +100,14 @@ class OppoMediaControlPlayback:
             )
 
             if mounted_share is None:
+                mount_reconciliation = self._reconcile_optical_mount_failure(
+                    request=request,
+                    mount_response=mount_response,
+                    on_waiting=on_waiting,
+                )
+                if mount_reconciliation is not None:
+                    return mount_reconciliation
+
                 return OppoPlaybackStartResult(
                     media_mounted=False,
                     playback_command_accepted=False,
@@ -103,6 +118,12 @@ class OppoMediaControlPlayback:
             playback_response = self._start_mounted_share_playback(
                 request=request,
                 mounted_share=mounted_share,
+            )
+            logger.info(
+                "OPPO MediaControl playback command response | mounted_path=%s | filename=%s | response=%s",
+                mounted_share.mount_path,
+                location.playback_file_name,
+                playback_response,
             )
 
             if not playback_response.get("success"):
@@ -257,6 +278,67 @@ class OppoMediaControlPlayback:
             timeout=timeout,
         )
 
+    def _reconcile_optical_mount_failure(
+        self,
+        *,
+        request: OppoPlaybackStartRequest,
+        mount_response: dict[str, Any],
+        on_waiting: Callable[[int], None] | None,
+    ) -> OppoPlaybackStartResult | None:
+        if not _is_optical_image_location(request.media_location):
+            return None
+
+        logger.warning(
+            "OPPO mount request failed for optical media; checking whether "
+            "the player completed startup asynchronously | server=%s | "
+            "folder=%s | filename=%s | response=%s",
+            request.media_location.content_server,
+            request.media_location.content_directory,
+            request.media_location.playback_file_name,
+            mount_response,
+        )
+
+        startup_result = self._playback_state_waiter(
+            config=self._config,
+            timeout=request.startup_timeout_seconds,
+            interval=request.poll_interval_seconds,
+            on_playback_waiting=on_waiting,
+        )
+
+        playback_state = OppoPlaybackState(
+            status=startup_result.status,
+            category=startup_result.category,
+            raw_response=startup_result.raw_response,
+            ok=startup_result.raw_response.startswith("@OK"),
+        )
+
+        if not startup_result.started:
+            logger.warning(
+                "OPPO did not report active playback after optical mount failure | "
+                "status=%s | category=%s | raw=%r",
+                startup_result.status.value,
+                startup_result.category.value,
+                startup_result.raw_response,
+            )
+            return None
+
+        logger.warning(
+            "OPPO reported active playback after optical mount failure; treating "
+            "startup as accepted by the player | status=%s | category=%s | raw=%r",
+            startup_result.status.value,
+            startup_result.category.value,
+            startup_result.raw_response,
+        )
+
+        return OppoPlaybackStartResult(
+            media_mounted=True,
+            playback_command_accepted=True,
+            playback_started_on_device=True,
+            detail="Mount request failed, but OPPO reported active playback.",
+            mounted_path=None,
+            playback_state=playback_state,
+        )
+
     def _start_mounted_share_playback(self, *, request, mounted_share) -> dict:
         location = request.media_location
         timeout = self._config["timeout_oppo_playitem"]
@@ -285,6 +367,13 @@ def _response_error_message(response: dict[str, Any]) -> str:
         return message
 
     return "No hay mas info"
+
+
+def _is_optical_image_location(location: PlayerMediaFileLocation) -> bool:
+    file_format = location.playback_file_format.lower()
+    file_name = location.playback_file_name.lower()
+
+    return "bluray" in file_format or file_format == "iso" or file_name.endswith(".iso")
 
 
 def _command_sent_result(operation: str, response_text: str) -> DeviceCommandResult:
