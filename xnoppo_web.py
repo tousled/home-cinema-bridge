@@ -1,8 +1,15 @@
 import json
 import os
 import time
+from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
 
+from home_cinema_bridge.runtime import (
+    HomeCinemaBridgeRuntime,
+    build_runtime_paths,
+    configure_logging,
+)
 from home_cinema_bridge.devices.oppo.web_control import (
     check_socket,
     sendnotifyremote,
@@ -21,7 +28,6 @@ from home_cinema_bridge.media_servers.emby.web_config import (
     load_devices,
 )
 from home_cinema_bridge.web.path_config import test_path_configuration
-from home_cinema_bridge.web.runtime_config import load_runtime_config
 from home_cinema_bridge.web.static_assets import (
     load_json_asset,
     read_binary_asset,
@@ -45,79 +51,54 @@ from home_cinema_bridge.devices.tv.web_control import (
 )
 from lib.config_manager import (
     ensure_config_exists,
-    is_configured,
-    save_effective_config,
     sanitize_config_for_web,
     merge_existing_secrets,
 )
-from lib.Emby_ws import XnoppoWs
 
-import threading
 import logging
-import logging.handlers
-import psutil
-import sys
 
 
 def get_version():
     return "0.5.1"
 
 
-def thread_function(ws_object):
-    print("Thread: starting")
-    ws_object.start()
-    print("Thread: finishing")
+@dataclass(frozen=True)
+class WebServerContext:
+    runtime: HomeCinemaBridgeRuntime
+    config_file: str
+    base_path: Path
+
+    @property
+    def html_path(self) -> str:
+        return str(self.base_path / "web") + os.sep
+
+    @property
+    def resource_path(self) -> str:
+        return str(self.base_path / "web" / "resources") + os.sep
+
+    @property
+    def lang_path(self) -> str:
+        return str(self.base_path / "web" / "lang") + os.sep
+
+    @property
+    def log_file(self) -> str:
+        return str(self.base_path / "emby_xnoppo_client_logging.log")
 
 
 def restart():
-    print("restart")
-    try:
-        emby_wsocket.stop()
-    except:
-        pass
-    print("fin restart")
-    os._exit(0)
+    current_context().runtime.restart_process()
 
 
 def save_config(config_file, config):
-    save_effective_config(config_file, config)
-
-    try:
-        emby_wsocket.ws_config = config
-        emby_wsocket.EmbySession.config = config
-    except:
-        emby_wsocket.ws_config = config
+    current_context().runtime.save_config(config)
 
 
 def get_state():
-    status = {}
-    status["Version"] = get_version()
-    try:
-        status["Playstate"] = emby_wsocket.EmbySession.playstate
-        status["playedtitle"] = emby_wsocket.EmbySession.playedtitle
-        status["server"] = emby_wsocket.EmbySession.server
-        status["folder"] = emby_wsocket.EmbySession.folder
-        status["filename"] = emby_wsocket.EmbySession.filename
-        status["CurrentData"] = emby_wsocket.EmbySession.currentdata
-        # gives a single float value
-    except:
-        status["Playstate"] = "Not_Connected"
-        status["playedtitle"] = ""
-        status["server"] = ""
-        status["folder"] = ""
-        status["filename"] = ""
-        status["CurrentData"] = ""
-    status["cpu_perc"] = psutil.cpu_percent()
-    status["mem_perc"] = psutil.virtual_memory().percent
-
-    # you can have the percentage of used RAM
-    logging.debug(psutil.virtual_memory().percent)
-    logging.debug(status)
-    return status
+    return current_context().runtime.get_state()
 
 
 def load_config(config_file, lang_path):
-    return load_runtime_config(config_file, lang_path, version=get_version())
+    return current_context().runtime.load_config()
 
 
 def check_version(config):
@@ -152,7 +133,27 @@ def get_devices(config):
     return load_devices(config)
 
 
+def current_context() -> WebServerContext:
+    return MyServer.context
+
+
+def create_web_handler(context: WebServerContext):
+    class ContextualWebServer(MyServer):
+        pass
+
+    MyServer.context = context
+    ContextualWebServer.context = context
+    return ContextualWebServer
+
+
 class MyServer(BaseHTTPRequestHandler):
+    context: WebServerContext
+
+    def read_json_request(self):
+        content_length = int(self.headers["Content-Length"])
+        post_data = self.rfile.read(content_length)
+        return json.loads(post_data.decode("utf-8"))
+
     def send_json_response(self, response_status: int, body):
         response_body = json.dumps(body, ensure_ascii=False).encode("utf-8")
 
@@ -164,15 +165,23 @@ class MyServer(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(response_body)
 
+    def send_json_legacy_payload(self, response_status: int, body):
+        response_body = json.dumps(body, ensure_ascii=False).encode("utf-8")
+        self.send_binary_response(
+            response_status,
+            response_body,
+            "text/html; charset=utf-8",
+        )
+
     def send_legacy_response(self, response_status: int, body: str):
-        response_body = str(body).encode("utf-8")
-        self.send_response(response_status)
-        self.send_header("Content-Length", str(len(response_body)))
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Access-Control-Allow-Credentials", "true")
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.end_headers()
-        self.wfile.write(response_body)
+        self.send_binary_response(
+            response_status,
+            str(body).encode("utf-8"),
+            "text/html; charset=utf-8",
+        )
+
+    def send_text_response(self, response_status: int, body: str, content_type: str):
+        self.send_binary_response(response_status, body.encode("utf-8"), content_type)
 
     def send_binary_response(
         self, response_status: int, body: bytes, content_type: str
@@ -185,19 +194,131 @@ class MyServer(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def do_GET(self):
-        cwd = os.path.dirname(os.path.abspath(__file__))
-        if sys.platform.startswith("win"):
-            separador = "\\"
+    def load_effective_config(self):
+        return load_config(self.context.config_file, self.context.lang_path)
+
+    def save_effective_config(self, config):
+        save_config(self.context.config_file, config)
+
+    def handle_config_get(self, *, load_library_data=False, load_device_data=False):
+        config = self.load_effective_config()
+        if load_library_data:
+            carga_libraries(config)
+        if load_device_data:
+            get_devices(config)
+
+        self.send_json_response(200, sanitize_config_for_web(config))
+        return 0
+
+    def handle_version_check(self):
+        config = self.load_effective_config()
+        response = check_version(config)
+        self.send_json_response(200, sanitize_config_for_web(response))
+        return 0
+
+    def handle_version_update(self):
+        config = self.load_effective_config()
+        response = update_version(config)
+        self.send_json_response(200, sanitize_config_for_web(response))
+        return 0
+
+    def handle_state(self):
+        response = get_state()
+        self.send_json_response(200, sanitize_config_for_web(response))
+        return 0
+
+    def handle_refresh_paths(self):
+        config = self.load_effective_config()
+        get_selectableFolders(config)
+        self.send_json_response(200, sanitize_config_for_web(config))
+        return 0
+
+    def handle_lang(self):
+        config = self.load_effective_config()
+        lang_file = Path(self.context.lang_path) / config["language"] / "lang.js"
+        response = load_json_asset(str(lang_file))
+        self.send_json_response(200, sanitize_config_for_web(response))
+        return 0
+
+    def handle_log_file(self):
+        self.load_effective_config()
+        body = read_binary_asset(self.context.log_file)
+        self.send_binary_response(200, bytes(body), "text/plain; charset=utf-8")
+        return 0
+
+    def handle_save_config(self):
+        config = self.read_json_request()
+        config = merge_existing_secrets(self.context.config_file, config)
+        self.save_effective_config(config)
+        self.send_json_legacy_payload(200, config)
+        return 0
+
+    def handle_check_emby(self):
+        config = self.read_json_request()
+        config = merge_existing_secrets(self.context.config_file, config)
+        response = test_emby(config)
+        if response == "OK":
+            self.send_json_response(200, config)
+            status = get_state()
+            if status["Playstate"] == "Not_Connected":
+                self.save_effective_config(config)
+                restart()
         else:
-            separador = "/"
-        resource_path = cwd + separador + "web" + separador + "resources" + separador
-        html_path = cwd + separador + "web" + separador
-        lang_path = cwd + separador + "web" + separador + "lang" + separador
+            self.send_legacy_response(300, response)
+        return 0
+
+    def handle_check_oppo(self):
+        config = self.read_json_request()
+        response = test_oppo(config)
+        if response == "OK":
+            self.send_legacy_response(200, response)
+        else:
+            self.send_legacy_response(300, response)
+        return 0
+
+    def handle_test_path(self):
+        server = self.read_json_request()
+        config = self.load_effective_config()
+        response = test_path_configuration(config, server)
+        if response == "OK":
+            self.send_json_legacy_payload(200, server)
+        else:
+            self.send_legacy_response(300, response)
+        return 0
+
+    def handle_navigate_path(self):
+        path_obj = self.read_json_request()
+        config = self.load_effective_config()
+        response = navigate_folder(path_obj["path"], config)
+        print(len(json.dumps(response)))
+        self.send_json_response(200, response)
+        return 0
+
+    def handle_device_test(self, operation, *, save_on_success=False):
+        config = self.read_json_request()
+        response = operation(config)
+        if response == "OK":
+            if save_on_success:
+                self.save_effective_config(config)
+            self.send_legacy_response(200, response)
+        else:
+            self.send_legacy_response(300, response)
+        return 0
+
+    def handle_start_movie(self):
+        data = self.read_json_request()
+        self.context.runtime.start_movie(data)
+        self.send_legacy_response(200, "OK")
+        return 0
+
+    def do_GET(self):
+        context = self.context
 
         print(self.path)
         static_response = load_static_route(
-            self.path, html_path=html_path, resource_path=resource_path
+            self.path,
+            html_path=context.html_path,
+            resource_path=context.resource_path,
         )
         if static_response is not None:
             self.send_binary_response(
@@ -205,60 +326,31 @@ class MyServer(BaseHTTPRequestHandler):
             )
             return 0
         if self.path == "/xnoppo_config":
-            a = load_config(config_file, lang_path)
-            self.send_json_response(200, sanitize_config_for_web(a))
-            return 0
+            return self.handle_config_get()
         if self.path == "/xnoppo_config_lib":
-            a = load_config(config_file, lang_path)
-            carga_libraries(a)
-            self.send_json_response(200, sanitize_config_for_web(a))
-            return 0
+            return self.handle_config_get(load_library_data=True)
         if self.path == "/xnoppo_config_dev":
-            a = load_config(config_file, lang_path)
-            get_devices(a)
-            self.send_json_response(200, sanitize_config_for_web(a))
-            return 0
+            return self.handle_config_get(load_device_data=True)
         if self.path == "/check_version":
-            config = load_config(config_file, lang_path)
-            a = check_version(config)
-            self.send_json_response(200, sanitize_config_for_web(a))
-            return 0
+            return self.handle_version_check()
         if self.path == "/update_version":
-            config = load_config(config_file, lang_path)
-            a = update_version(config)
-            self.send_json_response(200, sanitize_config_for_web(a))
-            return 0
+            return self.handle_version_update()
         if self.path == "/get_state":
-            a = get_state()
-            self.send_json_response(200, sanitize_config_for_web(a))
-            return 0
+            return self.handle_state()
         if self.path == "/restart":
-            self.send_response(200)
-            self.send_header("Content-type", "text/html; charset=utf-8")
-            self.end_headers()
-            a = "Restarting"
-            self.wfile.write(bytes(a, "utf-8"))
+            self.send_text_response(200, "Restarting", "text/html; charset=utf-8")
             restart()
         if self.path == "/refresh_paths":
-            self.send_response(200)
-            self.send_header("Content-type", "application/json; charset=utf-8")
-            self.end_headers()
-            a = load_config(config_file, lang_path)
-            get_selectableFolders(a)
-            self.send_json_response(200, sanitize_config_for_web(a))
-            return 0
+            return self.handle_refresh_paths()
         if self.path == "/lang":
-            config = load_config(config_file, lang_path)
-            a = load_json_asset(lang_path + config["language"] + separador + "lang.js")
-            self.send_json_response(200, sanitize_config_for_web(a))
-            return 0
+            return self.handle_lang()
         if self.path.find("/send_key?") >= 0:
             get_data = self.path
             print(get_data)
             a = len("/send_key?sendkey=")
             b = get_data[a : len(get_data)]
             print(b)
-            config = load_config(config_file, lang_path)
+            config = load_config(context.config_file, context.lang_path)
             sendnotifyremote(config["Oppo_IP"])
             result = check_socket(config)
             if b == "PON":
@@ -278,135 +370,37 @@ class MyServer(BaseHTTPRequestHandler):
                     getsetupmenu(config)
             else:
                 sendremotekey(b, config)
-            self.send_response(200)
-            self.send_header("Content-type", "text")
-            self.end_headers()
-            a = "ok"
-            self.wfile.write(bytes(a, "utf-8"))
+            self.send_text_response(200, "ok", "text/plain; charset=utf-8")
             return 0
         if self.path == "/log.txt":
-            self.send_response(200)
-            self.send_header("Content-type", "text")
-            self.end_headers()
-            load_config(config_file, lang_path)
-            a = read_binary_asset(cwd + separador + "emby_xnoppo_client_logging.log")
-            self.wfile.write(bytes(a))
-            return 0
+            return self.handle_log_file()
         else:
-            self.send_response(200)
-            self.send_header("Content-type", "text/html; charset=utf-8")
-            self.end_headers()
-            self.wfile.write(
-                bytes(
-                    "<html><head><title>https://pythonbasics.org</title></head>",
-                    "utf-8",
-                )
+            body = (
+                "<html><head><title>https://pythonbasics.org</title></head>"
+                f"<p>Request: {self.path}</p>"
+                "<body>"
+                "<p>This is an example web server.</p>"
+                "</body></html>"
             )
-            self.wfile.write(bytes("<p>Request: %s</p>" % self.path, "utf-8"))
-            self.wfile.write(bytes("<body>", "utf-8"))
-            self.wfile.write(bytes("<p>This is an example web server.</p>", "utf-8"))
-            self.wfile.write(bytes("</body></html>", "utf-8"))
+            self.send_text_response(200, body, "text/html; charset=utf-8")
 
     def do_POST(self):
-        cwd = os.path.dirname(os.path.abspath(__file__))
-        if sys.platform.startswith("win"):
-            separador = "\\"
-        else:
-            separador = "/"
-        lang_path = cwd + separador + "web" + separador + "lang" + separador
+        context = self.context
 
         print(self.path)
         if self.path == "/save_config":
-            content_length = int(
-                self.headers["Content-Length"]
-            )  # <--- Gets the size of data
-            post_data = self.rfile.read(content_length)  # <--- Gets the data itself
-            config = json.loads(post_data.decode("utf-8"))
-            config = merge_existing_secrets(config_file, config)
-            save_config(config_file, config)
-            self.send_response(200)
-            self.send_header("Content-Length", len(config))
-            self.send_header("Content-type", "text/html; charset=utf-8")
-            self.send_header("Access-Control-Allow-Credentials", "true")
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.end_headers()
-            self.wfile.write(bytes(json.dumps(config), "utf-8"))
+            return self.handle_save_config()
         if self.path == "/check_emby":
-            content_length = int(
-                self.headers["Content-Length"]
-            )  # <--- Gets the size of data
-            post_data = self.rfile.read(content_length)  # <--- Gets the data itself
-            config = json.loads(post_data.decode("utf-8"))
-            config = merge_existing_secrets(config_file, config)
-            a = test_emby(config)
-            if a == "OK":
-                response_body = json.dumps(config).encode("utf-8")
-                self.send_response(200)
-                self.send_header("Content-Length", str(len(response_body)))
-                self.send_header("Content-type", "application/json; charset=utf-8")
-                self.send_header("Access-Control-Allow-Credentials", "true")
-                self.send_header("Access-Control-Allow-Origin", "*")
-                self.end_headers()
-                self.wfile.write(response_body)
-                status = get_state()
-                if status["Playstate"] == "Not_Connected":
-                    save_config(config_file, config)
-                    emby_wsocket.ws_config = config
-                    restart()
-            else:
-                self.send_legacy_response(300, a)
-            return 0
+            return self.handle_check_emby()
         if self.path == "/check_oppo":
-            content_length = int(
-                self.headers["Content-Length"]
-            )  # <--- Gets the size of data
-            post_data = self.rfile.read(content_length)  # <--- Gets the data itself
-            config = json.loads(post_data.decode("utf-8"))
-            a = test_oppo(config)
-            if a == "OK":
-                self.send_legacy_response(200, a)
-            else:
-                self.send_legacy_response(300, a)
-            return 0
+            return self.handle_check_oppo()
         if self.path == "/test_path":
-            content_length = int(
-                self.headers["Content-Length"]
-            )  # <--- Gets the size of data
-            post_data = self.rfile.read(content_length)  # <--- Gets the data itself
-            server = json.loads(post_data.decode("utf-8"))
-            config = load_config(config_file, lang_path)
-            a = test_path_configuration(config, server)
-            if a == "OK":
-                self.send_response(200)
-                self.send_header("Content-Length", len(server))
-                self.send_header("Content-type", "text/html; charset=utf-8")
-                self.send_header("Access-Control-Allow-Credentials", "true")
-                self.send_header("Access-Control-Allow-Origin", "*")
-                self.end_headers()
-                self.wfile.write(bytes(json.dumps(server), "utf-8"))
-            else:
-                self.send_legacy_response(300, a)
-            return 0
+            return self.handle_test_path()
         if self.path == "/navigate_path":
-            content_length = int(
-                self.headers["Content-Length"]
-            )  # <--- Gets the size of data
-            post_data = self.rfile.read(content_length)  # <--- Gets the data itself
-            path_obj = json.loads(post_data.decode("utf-8"))
-            path = path_obj["path"]
-            config = load_config(config_file, lang_path)
-            a = navigate_folder(path, config)
-            a_json = json.dumps(a)
-            print(len(a_json))
-            self.send_json_response(200, a)
-            return 0
+            return self.handle_navigate_path()
 
         if self.path == "/tv_test_conn":
-            content_length = int(
-                self.headers["Content-Length"]
-            )  # <--- Gets the size of data
-            post_data = self.rfile.read(content_length)  # <--- Gets the data itself
-            config = json.loads(post_data.decode("utf-8"))
+            config = self.read_json_request()
             a = tv_test_conn(config)
             if a == "OK":
                 logging.info(
@@ -415,7 +409,7 @@ class MyServer(BaseHTTPRequestHandler):
                     config.get("TV_IP", ""),
                     bool(config.get("TV_MAC", "")),
                 )
-                save_config(config_file, config)
+                save_config(context.config_file, config)
                 self.send_legacy_response(200, a)
             else:
                 logging.warning(
@@ -429,179 +423,55 @@ class MyServer(BaseHTTPRequestHandler):
             return 0
 
         if self.path == "/get_tv_sources":
-            content_length = int(
-                self.headers["Content-Length"]
-            )  # <--- Gets the size of data
-            post_data = self.rfile.read(content_length)  # <--- Gets the data itself
-            config = json.loads(post_data.decode("utf-8"))
+            config = self.read_json_request()
             a = get_tv_sources(config)
             if a == "OK":
-                save_config(config_file, config)
+                save_config(context.config_file, config)
                 self.send_legacy_response(200, a)
             else:
                 self.send_legacy_response(300, a)
             return 0
         if self.path == "/get_av_sources":
-            content_length = int(
-                self.headers["Content-Length"]
-            )  # <--- Gets the size of data
-            post_data = self.rfile.read(content_length)  # <--- Gets the data itself
-            config = json.loads(post_data.decode("utf-8"))
+            config = self.read_json_request()
             a = get_hdmi_list(config)
             if a != None:
                 config["AV_SOURCES"] = a
-                save_config(config_file, config)
+                save_config(context.config_file, config)
                 self.send_legacy_response(200, a)
             else:
                 self.send_legacy_response(300, "")
             return 0
         if self.path == "/tv_test_init":
-            content_length = int(
-                self.headers["Content-Length"]
-            )  # <--- Gets the size of data
-            post_data = self.rfile.read(content_length)  # <--- Gets the data itself
-            config = json.loads(post_data.decode("utf-8"))
-            a = tv_change_hdmi(config)
-            if a == "OK":
-                self.send_legacy_response(200, a)
-            else:
-                self.send_legacy_response(300, a)
-            return 0
+            return self.handle_device_test(tv_change_hdmi)
         if self.path == "/tv_test_end":
-            content_length = int(
-                self.headers["Content-Length"]
-            )  # <--- Gets the size of data
-            post_data = self.rfile.read(content_length)  # <--- Gets the data itself
-            config = json.loads(post_data.decode("utf-8"))
-            a = tv_set_prev(config)
-            if a == "OK":
-                self.send_legacy_response(200, a)
-            else:
-                self.send_legacy_response(300, a)
-            return 0
+            return self.handle_device_test(tv_set_prev)
         if self.path == "/av_test_on":
-            content_length = int(
-                self.headers["Content-Length"]
-            )  # <--- Gets the size of data
-            post_data = self.rfile.read(content_length)  # <--- Gets the data itself
-            config = json.loads(post_data.decode("utf-8"))
-            a = av_check_power(config)
-            if a == "OK":
-                self.send_legacy_response(200, a)
-            else:
-                self.send_legacy_response(300, a)
-            return 0
+            return self.handle_device_test(av_check_power)
         if self.path == "/av_test_off":
-            content_length = int(
-                self.headers["Content-Length"]
-            )  # <--- Gets the size of data
-            post_data = self.rfile.read(content_length)  # <--- Gets the data itself
-            config = json.loads(post_data.decode("utf-8"))
-            a = av_power_off(config)
-            if a == "OK":
-                self.send_legacy_response(200, a)
-            else:
-                self.send_legacy_response(300, a)
-            return 0
+            return self.handle_device_test(av_power_off)
         if self.path == "/av_test_hdmi":
-            content_length = int(
-                self.headers["Content-Length"]
-            )  # <--- Gets the size of data
-            post_data = self.rfile.read(content_length)  # <--- Gets the data itself
-            config = json.loads(post_data.decode("utf-8"))
-            a = av_change_hdmi(config)
-            if a == "OK":
-                self.send_legacy_response(200, a)
-            else:
-                self.send_legacy_response(300, a)
-            return 0
+            return self.handle_device_test(av_change_hdmi)
         if self.path == "/start_movie":
-            content_length = int(
-                self.headers["Content-Length"]
-            )  # <--- Gets the size of data
-            post_data = self.rfile.read(content_length)  # <--- Gets the data itself
-            data = json.loads(post_data.decode("utf-8"))
-            emby_wsocket._play(data)
-            a = "OK"
-            if a == "OK":
-                self.send_legacy_response(200, a)
-            else:
-                self.send_legacy_response(300, a)
-            return 0
+            return self.handle_start_movie()
 
 
 if __name__ == "__main__":
     cwd = os.path.dirname(os.path.abspath(__file__))
-    if sys.platform.startswith("win"):
-        separador = "\\"
-    else:
-        separador = "/"
     config_file = str(ensure_config_exists())
-    lang_path = cwd + separador + "web" + separador + "lang" + separador
-    config = load_config(config_file, lang_path)
-    logfile = cwd + separador + "emby_xnoppo_client_logging.log"
-    lang = load_json_asset(lang_path + config["language"] + separador + "lang.js")
-
-    if config["DebugLevel"] == 0:
-        logging.basicConfig(
-            format="%(asctime)s %(levelname)s: %(message)s",
-            datefmt="%d/%m/%Y %I:%M:%S %p",
-            level=logging.CRITICAL,
-        )
-    elif config["DebugLevel"] == 1:
-        rfh = logging.handlers.RotatingFileHandler(
-            filename=logfile,
-            mode="a",
-            maxBytes=50 * 1024 * 1024,
-            backupCount=2,
-            encoding="utf-8",
-            delay=False,
-        )
-        logging.basicConfig(
-            format="%(asctime)s %(levelname)s: %(message)s",
-            datefmt="%d/%m/%Y %I:%M:%S %p",
-            level=logging.INFO,
-            handlers=[rfh, logging.StreamHandler(sys.stdout)],
-        )
-    elif config["DebugLevel"] == 2:
-        rfh = logging.handlers.RotatingFileHandler(
-            filename=logfile,
-            mode="a",
-            maxBytes=5 * 1024 * 1024,
-            backupCount=2,
-            encoding="utf-8",
-            delay=False,
-        )
-        logging.basicConfig(
-            format="%(asctime)s %(levelname)s: %(message)s",
-            datefmt="%d/%m/%Y %I:%M:%S %p",
-            level=logging.DEBUG,
-            handlers=[rfh, logging.StreamHandler(sys.stdout)],
-        )
-
-    logging.getLogger("websocket").setLevel(logging.WARNING)
-    logging.getLogger("urllib3").setLevel(logging.WARNING)
-
-    config = load_config(config_file, lang_path)
-    config_ready = is_configured(config)
-    emby_wsocket = None
-
-    if config_ready:
-        emby_wsocket = XnoppoWs()
-        emby_wsocket.ws_config = config
-        emby_wsocket.config_file = config_file
-        emby_wsocket.ws_lang = lang
-        x = threading.Thread(target=thread_function, args=(emby_wsocket,))
-        x.daemon = True
-        x.start()
-    else:
-        print(
-            "Config is not complete yet. Web UI is available; Emby websocket will not start."
-        )
+    runtime_paths = build_runtime_paths(cwd, config_file)
+    app_runtime = HomeCinemaBridgeRuntime(paths=runtime_paths, version=get_version())
+    web_context = WebServerContext(
+        runtime=app_runtime,
+        config_file=config_file,
+        base_path=Path(cwd),
+    )
+    config = app_runtime.load_config()
+    configure_logging(config, runtime_paths.log_file)
+    app_runtime.start_playback_listener_if_configured()
 
     logging.debug("Arrancamos el Servidor Web\n")
     serverPort = 8090
-    webServer = HTTPServer(("", serverPort), MyServer)
+    webServer = HTTPServer(("", serverPort), create_web_handler(web_context))
     print("Server started http://%s:%s" % ("", serverPort))
     try:
         webServer.serve_forever()
