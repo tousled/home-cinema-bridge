@@ -1,10 +1,8 @@
 import json
 import os
 import time
-from pathlib import Path
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-from home_cinema_bridge.devices.tv.factory import get_supported_tv_models
 from home_cinema_bridge.devices.oppo.web_control import (
     check_socket,
     sendnotifyremote,
@@ -23,6 +21,7 @@ from home_cinema_bridge.media_servers.emby.web_config import (
     load_devices,
 )
 from home_cinema_bridge.web.path_config import test_path_configuration
+from home_cinema_bridge.web.runtime_config import load_runtime_config
 from home_cinema_bridge.devices.av.web_control import (
     get_hdmi_list,
     av_check_power,
@@ -38,7 +37,6 @@ from home_cinema_bridge.devices.tv.web_control import (
 from lib.config_manager import (
     ensure_config_exists,
     is_configured,
-    load_effective_config,
     save_effective_config,
     sanitize_config_for_web,
     merge_existing_secrets,
@@ -52,7 +50,6 @@ import logging
 import logging.handlers
 import psutil
 import sys
-from home_cinema_bridge.devices.av.factory import get_supported_av_models
 
 
 def get_version():
@@ -113,72 +110,7 @@ def get_state():
 
 
 def load_config(config_file, lang_path):
-
-    config = load_effective_config(config_file)
-
-    ## new options default config values
-    config["Version"] = get_version()
-    default = config.get("Autoscript", False)
-    config["Autoscript"] = default
-    default = config.get("enable_all_libraries", False)
-    config["enable_all_libraries"] = default
-    default = config.get("TV_model", "")
-    config["TV_model"] = default
-    default = config.get("TV_MAC", "")
-    config["TV_MAC"] = default
-    default = config.get("TV_SOURCES", [])
-    config["TV_SOURCES"] = default
-    default = config.get("AV_model", "")
-    config["AV_model"] = default
-    default = config.get("AV_SOURCES", [])
-    config["AV_SOURCES"] = default
-    default = config.get("TV_script_init", "")
-    config["TV_script_init"] = default
-    default = config.get("TV_script_end", "")
-    config["TV_script_end"] = default
-    default = config.get("av_delay_hdmi", 0)
-    config["av_delay_hdmi"] = default
-    default = config.get("AV_Port", 23)
-    config["AV_Port"] = default
-    default = config.get("timeout_oppo_mount", 60)
-    config["timeout_oppo_mount"] = default
-    default = config.get("language", "es-ES")
-    config["language"] = default
-    default = config.get("default_nfs", False)
-    config["default_nfs"] = default
-    default = config.get("wait_nfs", False)
-    config["wait_nfs"] = default
-    default = config.get("refresh_time", 5)
-    config["refresh_time"] = default
-    default = config.get("check_beta", False)
-    config["check_beta"] = default
-    default = config.get("smbtrick", False)
-    config["smbtrick"] = default
-    default = config.get("BRDisc", False)
-    config["BRDisc"] = default
-
-    ## testeado de rutas
-    edit_server = 0
-    server_list = config["servers"]
-    for server in server_list:
-        default = server.get("Test_OK", False)
-        server_list[edit_server]["Test_OK"] = default
-        edit_server = edit_server + 1
-    ## Cambio de booleans de texto antiguos a boleans actuales.
-    if config["TV"] == "True":
-        config["TV"] = True
-    if config["TV"] == "False":
-        config["TV"] = False
-    if config["AV"] == "True":
-        config["AV"] = True
-    if config["AV"] == "False":
-        config["AV"] = False
-    config["servers"] = server_list
-    config["tv_dirs"] = get_supported_tv_models()
-    config["av_dirs"] = get_supported_av_models()
-    config["langs"] = get_dir_folders(lang_path)
-
-    return config
+    return load_runtime_config(config_file, lang_path, version=get_version())
 
 
 def check_version(config):
@@ -289,10 +221,6 @@ def carga_libraries(config):
 
 def get_selectableFolders(config):
     load_selectable_folders(config)
-
-
-def get_dir_folders(directory):
-    return sorted(path.name for path in Path(directory).iterdir() if path.is_dir())
 
 
 def get_devices(config):
