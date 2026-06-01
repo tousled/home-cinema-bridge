@@ -38,13 +38,6 @@ class RecordingLegacySession:
         }
         self.loaded_items = []
 
-    def process_data(self, payload):
-        return {
-            "item_id": payload["ItemIds"][0],
-            "media_source_id": payload.get("MediaSourceId", ""),
-            "ControllingUserId": payload.get("ControllingUserId", ""),
-        }
-
     def get_item_info(self, user_id, item_id):
         return {
             "UserData": {"PlaybackPositionTicks": 120_000_000},

@@ -7,6 +7,9 @@ from typing import Any
 from home_cinema_bridge.devices.oppo.playback_command_control import (
     OppoPlaybackCommandControl,
 )
+from home_cinema_bridge.media_servers.emby.playback_request import (
+    parse_playback_request_payload,
+)
 from home_cinema_bridge.playback.intent import PlaybackOrigin
 
 
@@ -63,7 +66,7 @@ class EmbyPlaybackCommandHandler:
         args = data["Arguments"]
 
         if command == "SetAudioStreamIndex":
-            params = self._emby_session.process_data(self._emby_session.currentdata)
+            params = self._current_playback_request_params()
             audio_index = self._emby_session.get_xnoppo_audio_index(
                 params["ControllingUserId"],
                 params["item_id"],
@@ -74,7 +77,7 @@ class EmbyPlaybackCommandHandler:
             return
 
         if command == "SetSubtitleStreamIndex":
-            params = self._emby_session.process_data(self._emby_session.currentdata)
+            params = self._current_playback_request_params()
             subtitle_index = self._emby_session.get_xnoppo_subs_index(
                 params["ControllingUserId"],
                 params["item_id"],
@@ -152,6 +155,13 @@ class EmbyPlaybackCommandHandler:
 
     def _current_oppo_position_ticks(self) -> int:
         return self._oppo_control.current_position_ticks()
+
+    def _current_playback_request_params(self) -> dict[str, Any]:
+        return parse_playback_request_payload(
+            self._emby_session.currentdata,
+            config=self._config,
+            load_item_info=self._emby_session.get_item_info,
+        )
 
     @property
     def _config(self) -> dict[str, Any]:
