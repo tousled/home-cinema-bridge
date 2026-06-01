@@ -25,11 +25,11 @@ from home_cinema_bridge.web.runtime_config import load_runtime_config
 from home_cinema_bridge.web.static_assets import (
     load_json_asset,
     read_binary_asset,
-    read_text_asset,
 )
-from home_cinema_bridge.web.version_update import (
-    check_application_version,
-    trigger_configured_update,
+from home_cinema_bridge.web.static_routes import load_static_route
+from home_cinema_bridge.web.version_routes import (
+    check_version_response,
+    update_version_response,
 )
 from home_cinema_bridge.devices.av.web_control import (
     get_hdmi_list,
@@ -121,11 +121,11 @@ def load_config(config_file, lang_path):
 
 
 def check_version(config):
-    return check_application_version(config, get_version()).as_legacy_response()
+    return check_version_response(config, get_version())
 
 
 def update_version(config):
-    return trigger_configured_update(config, get_version())
+    return update_version_response(config, get_version())
 
 
 def test_emby(config):
@@ -174,6 +174,17 @@ class MyServer(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(response_body)
 
+    def send_binary_response(
+        self, response_status: int, body: bytes, content_type: str
+    ):
+        self.send_response(response_status)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Content-Type", content_type)
+        self.send_header("Access-Control-Allow-Credentials", "true")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_GET(self):
         cwd = os.path.dirname(os.path.abspath(__file__))
         if sys.platform.startswith("win"):
@@ -185,96 +196,13 @@ class MyServer(BaseHTTPRequestHandler):
         lang_path = cwd + separador + "web" + separador + "lang" + separador
 
         print(self.path)
-        if self.path == "/emby_conf.html":
-            i = read_text_asset(html_path + "emby_conf.html")
-            self.send_response(200)
-            self.send_header("Content-type", "text/html; charset=utf-8")
-            self.end_headers()
-            self.wfile.write(bytes(i, "utf-8"))
-            return 0
-        if self.path == "/oppo_conf.html":
-            self.send_response(200)
-            self.send_header("Content-type", "text/html; charset=utf-8")
-            self.end_headers()
-            i = read_text_asset(html_path + "oppo_conf.html")
-            self.wfile.write(bytes(i, "utf-8"))
-            return 0
-        if self.path == "/lib_conf.html":
-            self.send_response(200)
-            self.send_header("Content-type", "text/html; charset=utf-8")
-            self.end_headers()
-            i = read_text_asset(html_path + "lib_conf.html")
-            self.wfile.write(bytes(i, "utf-8"))
-            return 0
-        if self.path == "/path_conf.html":
-            self.send_response(200)
-            self.send_header("Content-type", "text/html; charset=utf-8")
-            self.end_headers()
-            i = read_text_asset(html_path + "path_conf.html")
-            self.wfile.write(bytes(i, "utf-8"))
-            return 0
-        if self.path == "/tv_conf.html":
-            self.send_response(200)
-            self.send_header("Content-type", "text/html; charset=utf-8")
-            self.end_headers()
-            i = read_text_asset(html_path + "tv_conf.html")
-            self.wfile.write(bytes(i, "utf-8"))
-            return 0
-        if self.path == "/av_conf.html":
-            self.send_response(200)
-            self.send_header("Content-type", "text/html; charset=utf-8")
-            self.end_headers()
-            i = read_text_asset(html_path + "av_conf.html")
-            self.wfile.write(bytes(i, "utf-8"))
-            return 0
-        if self.path == "/other_conf.html":
-            self.send_response(200)
-            self.send_header("Content-type", "text/html; charset=utf-8")
-            self.end_headers()
-            i = read_text_asset(html_path + "other_conf.html")
-            self.wfile.write(bytes(i, "utf-8"))
-            return 0
-        if self.path == "/status.html":
-            self.send_response(200)
-            self.send_header("Content-type", "text/html; charset=utf-8")
-            self.end_headers()
-            i = read_text_asset(html_path + "status.html")
-            self.wfile.write(bytes(i, "utf-8"))
-            return 0
-        if self.path == "/help.html":
-            self.send_response(200)
-            self.send_header("Content-type", "text/html; charset=utf-8")
-            self.end_headers()
-            i = read_text_asset(html_path + "help.html")
-            self.wfile.write(bytes(i, "utf-8"))
-            return 0
-        if self.path == "/remote.html":
-            i = read_text_asset(html_path + "remote.html")
-            self.send_response(200)
-            self.send_header("Content-type", "text/html; charset=utf-8")
-            self.end_headers()
-            self.wfile.write(bytes(i, "utf-8"))
-            return 0
-        if self.path == "/android-chrome-36x36.png":
-            self.send_response(200)
-            self.send_header("Content-type", "text/html; charset=utf-8")
-            self.end_headers()
-            i = read_binary_asset(resource_path + "android-chrome-36x36.png")
-            self.wfile.write(bytes(i))
-            return 0
-        if self.path == "/av-receiver-icon-2.jpg":
-            self.send_response(200)
-            self.send_header("Content-type", "text/html; charset=utf-8")
-            self.end_headers()
-            i = read_binary_asset(resource_path + "av-receiver-icon-2.jpg")
-            self.wfile.write(bytes(i))
-            return 0
-        if self.path == "/dragon.png":
-            self.send_response(200)
-            self.send_header("Content-type", "text/html; charset=utf-8")
-            self.end_headers()
-            i = read_binary_asset(resource_path + "dragon.png")
-            self.wfile.write(bytes(i))
+        static_response = load_static_route(
+            self.path, html_path=html_path, resource_path=resource_path
+        )
+        if static_response is not None:
+            self.send_binary_response(
+                200, static_response.body, static_response.content_type
+            )
             return 0
         if self.path == "/xnoppo_config":
             a = load_config(config_file, lang_path)
