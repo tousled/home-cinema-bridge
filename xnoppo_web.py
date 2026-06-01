@@ -3,6 +3,11 @@ import os
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
+from home_cinema_bridge.runtime import (
+    HomeCinemaBridgeRuntime,
+    build_runtime_paths,
+    configure_logging,
+)
 from home_cinema_bridge.devices.oppo.web_control import (
     check_socket,
     sendnotifyremote,
@@ -21,7 +26,6 @@ from home_cinema_bridge.media_servers.emby.web_config import (
     load_devices,
 )
 from home_cinema_bridge.web.path_config import test_path_configuration
-from home_cinema_bridge.web.runtime_config import load_runtime_config
 from home_cinema_bridge.web.static_assets import (
     load_json_asset,
     read_binary_asset,
@@ -45,17 +49,11 @@ from home_cinema_bridge.devices.tv.web_control import (
 )
 from lib.config_manager import (
     ensure_config_exists,
-    is_configured,
-    save_effective_config,
     sanitize_config_for_web,
     merge_existing_secrets,
 )
-from lib.Emby_ws import XnoppoWs
 
-import threading
 import logging
-import logging.handlers
-import psutil
 import sys
 
 
@@ -63,61 +61,20 @@ def get_version():
     return "0.5.1"
 
 
-def thread_function(ws_object):
-    print("Thread: starting")
-    ws_object.start()
-    print("Thread: finishing")
-
-
 def restart():
-    print("restart")
-    try:
-        emby_wsocket.stop()
-    except:
-        pass
-    print("fin restart")
-    os._exit(0)
+    app_runtime.restart_process()
 
 
 def save_config(config_file, config):
-    save_effective_config(config_file, config)
-
-    try:
-        emby_wsocket.ws_config = config
-        emby_wsocket.EmbySession.config = config
-    except:
-        emby_wsocket.ws_config = config
+    app_runtime.save_config(config)
 
 
 def get_state():
-    status = {}
-    status["Version"] = get_version()
-    try:
-        status["Playstate"] = emby_wsocket.EmbySession.playstate
-        status["playedtitle"] = emby_wsocket.EmbySession.playedtitle
-        status["server"] = emby_wsocket.EmbySession.server
-        status["folder"] = emby_wsocket.EmbySession.folder
-        status["filename"] = emby_wsocket.EmbySession.filename
-        status["CurrentData"] = emby_wsocket.EmbySession.currentdata
-        # gives a single float value
-    except:
-        status["Playstate"] = "Not_Connected"
-        status["playedtitle"] = ""
-        status["server"] = ""
-        status["folder"] = ""
-        status["filename"] = ""
-        status["CurrentData"] = ""
-    status["cpu_perc"] = psutil.cpu_percent()
-    status["mem_perc"] = psutil.virtual_memory().percent
-
-    # you can have the percentage of used RAM
-    logging.debug(psutil.virtual_memory().percent)
-    logging.debug(status)
-    return status
+    return app_runtime.get_state()
 
 
 def load_config(config_file, lang_path):
-    return load_runtime_config(config_file, lang_path, version=get_version())
+    return app_runtime.load_config()
 
 
 def check_version(config):
@@ -351,7 +308,6 @@ class MyServer(BaseHTTPRequestHandler):
                 status = get_state()
                 if status["Playstate"] == "Not_Connected":
                     save_config(config_file, config)
-                    emby_wsocket.ws_config = config
                     restart()
             else:
                 self.send_legacy_response(300, a)
@@ -521,7 +477,7 @@ class MyServer(BaseHTTPRequestHandler):
             )  # <--- Gets the size of data
             post_data = self.rfile.read(content_length)  # <--- Gets the data itself
             data = json.loads(post_data.decode("utf-8"))
-            emby_wsocket._play(data)
+            app_runtime.start_movie(data)
             a = "OK"
             if a == "OK":
                 self.send_legacy_response(200, a)
@@ -537,67 +493,12 @@ if __name__ == "__main__":
     else:
         separador = "/"
     config_file = str(ensure_config_exists())
+    runtime_paths = build_runtime_paths(cwd, config_file)
+    app_runtime = HomeCinemaBridgeRuntime(paths=runtime_paths, version=get_version())
     lang_path = cwd + separador + "web" + separador + "lang" + separador
     config = load_config(config_file, lang_path)
-    logfile = cwd + separador + "emby_xnoppo_client_logging.log"
-    lang = load_json_asset(lang_path + config["language"] + separador + "lang.js")
-
-    if config["DebugLevel"] == 0:
-        logging.basicConfig(
-            format="%(asctime)s %(levelname)s: %(message)s",
-            datefmt="%d/%m/%Y %I:%M:%S %p",
-            level=logging.CRITICAL,
-        )
-    elif config["DebugLevel"] == 1:
-        rfh = logging.handlers.RotatingFileHandler(
-            filename=logfile,
-            mode="a",
-            maxBytes=50 * 1024 * 1024,
-            backupCount=2,
-            encoding="utf-8",
-            delay=False,
-        )
-        logging.basicConfig(
-            format="%(asctime)s %(levelname)s: %(message)s",
-            datefmt="%d/%m/%Y %I:%M:%S %p",
-            level=logging.INFO,
-            handlers=[rfh, logging.StreamHandler(sys.stdout)],
-        )
-    elif config["DebugLevel"] == 2:
-        rfh = logging.handlers.RotatingFileHandler(
-            filename=logfile,
-            mode="a",
-            maxBytes=5 * 1024 * 1024,
-            backupCount=2,
-            encoding="utf-8",
-            delay=False,
-        )
-        logging.basicConfig(
-            format="%(asctime)s %(levelname)s: %(message)s",
-            datefmt="%d/%m/%Y %I:%M:%S %p",
-            level=logging.DEBUG,
-            handlers=[rfh, logging.StreamHandler(sys.stdout)],
-        )
-
-    logging.getLogger("websocket").setLevel(logging.WARNING)
-    logging.getLogger("urllib3").setLevel(logging.WARNING)
-
-    config = load_config(config_file, lang_path)
-    config_ready = is_configured(config)
-    emby_wsocket = None
-
-    if config_ready:
-        emby_wsocket = XnoppoWs()
-        emby_wsocket.ws_config = config
-        emby_wsocket.config_file = config_file
-        emby_wsocket.ws_lang = lang
-        x = threading.Thread(target=thread_function, args=(emby_wsocket,))
-        x.daemon = True
-        x.start()
-    else:
-        print(
-            "Config is not complete yet. Web UI is available; Emby websocket will not start."
-        )
+    configure_logging(config, runtime_paths.log_file)
+    app_runtime.start_playback_listener_if_configured()
 
     logging.debug("Arrancamos el Servidor Web\n")
     serverPort = 8090
