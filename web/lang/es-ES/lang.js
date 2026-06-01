@@ -163,6 +163,36 @@
 "status_refresh_time" : "Tiempo de refresco de la información (en segundos). 0 deshabilita el refresco",
 "status_check_beta" : "Marcar para comprobar versiónes BETA",
 "status_new_versión" : "Hay una nueva versión disponible! ",
+    "status_new_version"
+:
+    "Hay una nueva versión disponible! ",
+        "status_version_title"
+:
+    "Versión de la aplicación",
+        "status_current_version"
+:
+    "Versión instalada",
+        "status_latest_version"
+:
+    "Última versión disponible",
+        "status_version_up_to_date"
+:
+    "La aplicación está actualizada",
+        "status_version_available"
+:
+    "Hay una nueva versión disponible",
+        "status_version_check_error"
+:
+    "No se ha podido comprobar la versión.",
+        "status_automatic_update_disabled"
+:
+    "La actualización automática todavía no está disponible. La comprobación de versión es solo informativa.",
+        "status_check_version_button"
+:
+    "Comprobar versión",
+        "status_release_button"
+:
+    "Ver release",
 "status_restart_button" : "Reiniciar Xnoppo",
 "status_update_button" : "Actualizar Xnoppo",
 "help_conf_title" : "Ayuda sobre Xnoppo",

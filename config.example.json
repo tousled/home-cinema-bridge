@@ -4,6 +4,8 @@
     "output_path": "backup",
     "Oppo_IP": "",
     "timeout_oppo_conection": 10,
+    "oppo_control_api_connect_timeout": 1.0,
+    "oppo_web_control_api_attempts": 3,
     "timeout_oppo_playitem": 30,
     "Autoscript": false,
     "Always_ON": true,
@@ -40,6 +42,8 @@
     "wait_nfs": true,
     "refresh_time": 2,
     "check_beta": false,
+  "release_repository": "tousled/home-cinema-bridge",
+  "version_check_timeout": 10,
     "smbtrick": false,
     "BRDisc": false,
     "langs": [

@@ -1,77 +1,20 @@
 import json
 import logging
 import socket
-import time
 import urllib.parse
 
 from home_cinema_bridge.network.http import get_http_session
-from .devices.oppo.control_api_activation import OppoControlApiActivator
-from .devices.oppo.control_api_client import OppoControlApiClient
-from .devices.oppo.mounted_share import (
-    OppoMountedShare,
-    parse_mounted_share_response,
-)
-from .devices.oppo.playback_status_client import OppoPlaybackStatusClient
-from .devices.oppo.legacy_network_compat import (
+from lib.devices.oppo.control_api_activation import OppoControlApiActivator
+from lib.devices.oppo.control_api_client import OppoControlApiClient
+from lib.devices.oppo.legacy_network_compat import (
     LoginNFS,
     LoginSambaWithOutID,
     smbtrick,
 )
-
-
-_qpl_last_observed_states = {}
-
-
-def reset_qpl_observation_state():
-    _qpl_last_observed_states.clear()
-
-
-def log_oppo_qpl_state(config, label, changes_only=False):
-    try:
-        debug_level = int(config.get("DebugLevel", 0))
-        if debug_level <= 0:
-            return None
-
-        oppo_ip = config.get("Oppo_IP")
-        if not oppo_ip:
-            print(f"QPL:{label} skipped | Oppo_IP is not configured")
-            return None
-
-        client = OppoPlaybackStatusClient(
-            host=oppo_ip,
-            port=int(config.get("OPPO_Port", 23)),
-            timeout=float(config.get("timeout_oppo_conection", 3)),
-        )
-
-        result = client.query_playback_state()
-
-        if changes_only and debug_level < 2:
-            current_state = (result.status, result.category.value, result.ok)
-            previous_state = _qpl_last_observed_states.get(label)
-
-            if previous_state == current_state:
-                return result
-
-            _qpl_last_observed_states[label] = current_state
-
-        print(
-            f"QPL:{label} | "
-            f"raw={result.raw_response!r} | "
-            f"status={result.status} | "
-            f"category={result.category.value} | "
-            f"ok={result.ok}"
-        )
-
-        return result
-
-    except Exception as exc:
-        try:
-            if config.get("DebugLevel", 0) > 0:
-                print(f"QPL:{label} | ERROR {type(exc).__name__}: {exc}")
-        except Exception:
-            pass
-
-        return None
+from lib.devices.oppo.mounted_share import (
+    OppoMountedShare,
+    parse_mounted_share_response,
+)
 
 
 def oppo_control_api_client(config):
@@ -95,7 +38,7 @@ def sendnotifyremote(UDP_IP):
 def check_socket(config, session_id=None):
     activator = OppoControlApiActivator.from_config(config)
     result = activator.ensure_control_api_available(
-        max_attempts=int(config["timeout_oppo_conection"])
+        max_attempts=_web_control_api_attempts(config)
     )
 
     if result.available:
@@ -117,6 +60,11 @@ def check_socket(config, session_id=None):
     return 1
 
 
+def _web_control_api_attempts(config) -> int:
+    configured_attempts = int(config.get("oppo_web_control_api_attempts", 3))
+    return max(1, configured_attempts)
+
+
 def getmainfirmwareversion(config):
     return oppo_control_api_client(config).get_main_firmware_version()
 
@@ -135,10 +83,6 @@ def getdevicelist(config):
 
 def getglobalinfo(config):
     return oppo_control_api_client(config).get_global_info()
-
-
-def getplayingtime(config):
-    return oppo_control_api_client(config).get_playing_time()
 
 
 def mountSharedFolder(server, folder, Username, Password, config, checksmb=True):
@@ -443,89 +387,9 @@ def navigate_folder(path, config):
     return getfilelist(config, last_folder, mounted_share)
 
 
-def setplaytime(config, playticks):
-    logging.debug("setplaytime")
-    response_text = oppo_control_api_client(config).set_play_time(playticks)
-    logging.debug("*** setplaytime Response: %s", response_text)
-    return response_text
-
-
-def setaudiotrack(config, audio_index):
-    logging.debug("setaudiotrack")
-    response_text = oppo_control_api_client(config).select_audio_track(audio_index)
-    logging.debug("*** setaudiotrack Response: %s", response_text)
-    return response_text
-
-
-def set_subtitles_track(config, subs_index, startup_timer=None):
-    logging.debug("set_subtitles_track")
-
-    if config["DebugLevel"] > 0:
-        print(subs_index)
-
-    if startup_timer is not None:
-        with startup_timer.measure_step("subtitle_read_current_oppo_track"):
-            actual_track = get_current_subtitle_track(config)
-    else:
-        actual_track = get_current_subtitle_track(config)
-
-    if config["DebugLevel"] > 0:
-        print(actual_track)
-
-    client = oppo_control_api_client(config)
-    timeout = 0
-
-    if startup_timer is not None:
-        with startup_timer.measure_step("subtitle_set_and_confirm_oppo_track"):
-            while actual_track != subs_index and timeout < 10:
-                response_text = client.select_subtitle_track(subs_index)
-                logging.debug("*** set_subtitles_track Response: %s", response_text)
-
-                if config["DebugLevel"] == 2:
-                    print(response_text)
-
-                time.sleep(1)
-                actual_track = get_current_subtitle_track(config)
-                timeout = timeout + 1
-    else:
-        while actual_track != subs_index and timeout < 10:
-            response_text = client.select_subtitle_track(subs_index)
-            logging.debug("*** set_subtitles_track Response: %s", response_text)
-
-            if config["DebugLevel"] == 2:
-                print(response_text)
-
-            time.sleep(1)
-            actual_track = get_current_subtitle_track(config)
-            timeout = timeout + 1
-
-    return 0
-
-
-def get_current_subtitle_track(config):
-    logging.debug("get_current_subtitle_track")
-    response_text = oppo_control_api_client(config).get_subtitle_menu()
-    logging.debug("*** getsubtitlemenulist Response: %s", response_text)
-    response_subs = json.loads(response_text)
-    try:
-        for subs in response_subs["subtitle_list"]:
-            if subs["selected"] == True:
-                return subs["index"]
-    except:
-        return 0
-
-
 def sendremotekey(key, config):
-    url = (
-        "http://"
-        + config["Oppo_IP"]
-        + ":436/sendremotekey?%7B%22key%22%3A%22"
-        + key
-        + "%22%7D"
-    )
-    headers = {}
-    response = get_http_session("oppo-legacy").get(url, headers=headers)
-    return response.text
+    response_text = oppo_control_api_client(config).send_remote_key(key)
+    return response_text
 
 
 def resolve_server_is_nfs(config, device_list, server_name):

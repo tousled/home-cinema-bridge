@@ -59,10 +59,6 @@ class XnoppoWs(threading.Thread):
         threading.Thread.__init__(self)
         logging.info('Ws:Fin init\n')
 
-    def set_lang(self,lang):
-        self.ws_lang=lang
-        self.EmbySession.lang=lang
-
     def reload_config(self):
         if self.ws_config["DebugLevel"]>0: print('Recargando Configuracion')
         with open(self.config_file, 'r') as f:

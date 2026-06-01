@@ -25,89 +25,6 @@ class EmbyHttp(threading.Thread):
     def authenticate(self):
         return self.client.authenticate()
 
-    def process_data(self, data):
-        startat = data.get("StartPositionTicks")
-
-        if startat is None:
-            startat = data.get("SavedPlaybackPositionTicks")
-
-        if startat is None:
-            startat = -1
-
-        startat = int(startat)
-
-        item_ids = data["ItemIds"]
-        media_source_id = data.get("MediaSourceId", "")
-        subtitle_stream_index = data.get("SubtitleStreamIndex", -1)
-        audio_stream_index = data.get("AudioStreamIndex", 1)
-        start_index = data.get("StartIndex", 0)
-
-        if self.config["DebugLevel"] > 0:
-            print(len(item_ids))
-
-        if len(item_ids) > 0:
-            item_ids = item_ids[0]
-
-        if start_index > 0 and start_index < len(item_ids):
-            item_ids = item_ids[start_index:]
-
-        if startat < 0:
-            iteminfo = self.get_item_info(data.get("ControllingUserId", ""), item_ids)
-            startat = int(iteminfo.get("UserData", {}).get("PlaybackPositionTicks", 0))
-
-        params = {}
-        params["item_id"] = item_ids
-        params["auto_resume"] = startat
-        params["media_source_id"] = media_source_id
-        params["subtitle_stream_index"] = subtitle_stream_index
-        params["audio_stream_index"] = audio_stream_index
-        params["ControllingUserId"] = data.get("ControllingUserId", "")
-        params["Session_id"] = data.get("SessionID") or data.get("Id")
-        params["play_session_id"] = data.get("PlaySessionId", "")
-        params["DeviceName"] = data.get("DeviceName", "")
-        params["Device_Id"] = data.get("Device_Id", "")
-
-        if self.config.get("DebugLevel", 0) > 0:
-            print(
-                "EmbyHttp:playback params | "
-                f"item_id={params.get('item_id')} | "
-                f"auto_resume={params.get('auto_resume')} | "
-                f"media_source_id={params.get('media_source_id')} | "
-                f"audio={params.get('audio_stream_index')} | "
-                f"subtitle={params.get('subtitle_stream_index')} | "
-                f"device={params.get('DeviceName')}"
-            )
-
-        return params
-
-    def playnow(self,data):
-
-        params = self.process_data(data)
-        session_info = self.user_info["SessionInfo"]
-        message_data = {
-                      "CanSeek": True,
-                      "ItemId": params["item_id"],
-                      "SessionId": session_info["Id"],
-                      "MediaSourceId": params["media_source_id"],
-                      "AudioStreamIndex": params["audio_stream_index"],
-                      "SubtitleStreamIndex": params["subtitle_stream_index"],
-                      "IsPaused": False,
-                      "IsMuted": False,
-                      "PositionTicks": params["auto_resume"],
-                      "PlayMethod": "DirectPlay",
-                      "PlaySessionId": params["play_session_id"],
-                      "RepeatMode": "RepeatNone"
-                        }
-        response = self.client.notify_playback_started(message_data)
-        logging.debug(
-            "Emby playback started response | status=%s | body=%s",
-            response.status_code,
-            response.text,
-        )
-        if self.config["DebugLevel"]>0: print (response.text)
-
-        return response
-
     def playback_stop(self,session_id):
 
         message_data = {}
@@ -129,9 +46,6 @@ class EmbyHttp(threading.Thread):
 
         return response
 
-
-    def get_headers(self,user_info=None):
-        return self.client.get_headers(user_info)
 
     def send_message2(self,session_id, sms_txt, timeout=3500):
         logging.info(
@@ -212,19 +126,6 @@ class EmbyHttp(threading.Thread):
         #print (response_text)
         return response_text
 
-
-    def send_user_message(self,user_id,message,timeout=3500):
-        url = ('{server}/emby/Sessions?ControllableByUserId=' + user_id)
-        response_data = self.get_ulr_data(url, self.config, self.user_info)
-        item_list = json.loads(response_data)
-        logging.debug('Session_Info Response Data: %s',response_data)
-        for item in item_list:
-           item_data = {}
-           item_data["Id"] = item["Id"]
-           self.send_message2(item_data["Id"],message,timeout)
-        return item_data
-
-
     def get_session_user_info(self,user_id,device_id):
             url = ('{server}/emby/Sessions?ControllableByUserId=' + str(user_id) + '&DeviceID=' + str(device_id))
             response_data = self.get_ulr_data(url, self.config, self.user_info)
@@ -249,13 +150,6 @@ class EmbyHttp(threading.Thread):
                logging.info("-----------------------------------------------------------\n")
             return item
 
-
-    def get_item_path(self,user_id,item_id):
-        url2 = ('{server}/emby/Users/' + str(user_id) + '/Items/' + str(item_id))
-        response_data_item = self.get_ulr_data(url2, self.config, self.user_info)
-        item_list_data = json.loads(response_data_item)
-        logging.debug('Item List Data Path %s',item_list_data["Path"])
-        return item_list_data["Path"]
 
     def get_item_info(self,user_id,item_id):
         url2 = ('{server}/emby/Users/' + str(user_id) + '/Items/' + str(item_id))
@@ -285,65 +179,6 @@ class EmbyHttp(threading.Thread):
             if mediasource["Id"]==mediasource_id:
                 return(mediasource)
         return item_list_data
-    
-    def get_item_container(self,user_id,item_id):
-        url2 = ('{server}/emby/Users/' + str(user_id) + '/Items/' + str(item_id))
-        response_data_item = self.get_ulr_data(url2, self.config, self.user_info)
-        item_list_data = json.loads(response_data_item)
-        logging.debug('Item List Data Container %s',item_list_data["Container"])
-        return item_list_data["Container"]
-
-    def get_item_ascenstors(self,item_id):
-        url2 = ('{server}/emby/Items/' + str(item_id) + '/Ancestors')
-        response_data_item = self.get_ulr_data(url2, self.config, self.user_info)
-        item_list_data = json.loads(response_data_item)
-        logging.debug('Item List Data Container %s',item_list_data)
-        return item_list_data
-   
-    def get_user_views(self,user_id):
-        url2 = ('{server}/emby/Users/' + str(user_id) + '/Views?IncludeExternalContent=false')
-        response_data_item = self.get_ulr_data(url2, self.config, self.user_info)
-        item_list_data = json.loads(response_data_item)
-        logging.debug('Item List Data User Views %s',item_list_data)
-        return item_list_data["Items"]
-    
-    def get_view_items(self, view_id):
-        url2 = ('{server}/emby/Items?parentId=' + str(view_id))
-        response_data_item = self.get_ulr_data(url2, self.config, self.user_info)
-        item_list_data = json.loads(response_data_item)
-        return item_list_data["Items"]
-
-    def get_view_items2(self,user_id,view_id,item_id):
-        url2 = ('{server}/emby/Users/' + str(user_id) + '/Items?parentId=' + str(view_id) + '&item_id=' + str(item_id))
-        response_data_item = self.get_ulr_data(url2, self.config, self.user_info)
-        item_list_data = json.loads(response_data_item)
-        return item_list_data["Items"]
-
-    def get_info_from_device(self,device_id):
-        url = ('{server}/emby/Sessions?DeviceId=' + device_id)
-        response_data = self.get_ulr_data(url, self.config, self.user_info)
-        item_list = json.loads(response_data)
-        if self.config["DebugLevel"]>2:
-            logging.debug('Response Data: %s',response_data)
-        for item in item_list:
-            item_data = {}
-            item_data["Id"] = item["Id"]
-            item_data["Client"] = item["Client"]
-            item_data["DeviceName"] = item["DeviceName"]
-            print (item_data["Id"])
-            logging.info ("Session ID             : %s " % item_data["Id"])
-            logging.info ("Client                 : %s " % item_data["Client"])
-            logging.info ("DeviceName             : %s " % item_data["DeviceName"])
-            logging.info ("-----------------------------------------------------------")
-        return item
-
-    def is_item_in_library(self,view_id,item_id):
-        resultado=False
-        item_list = self.get_view_items(view_id)
-        for item in item_list:
-            if item["Id"]==item_id:
-                return True
-        return resultado
 
     def is_item_in_library2(self, view_id, item_path):
         resultado=False
@@ -355,13 +190,6 @@ class EmbyHttp(threading.Thread):
                     if resultado:
                         return resultado
         return resultado
-
-    def get_emby_devices(self):
-        url = ('{server}/emby/Devices?')
-        response_data = self.get_ulr_data(url, self.config, self.user_info)
-        item_list = json.loads(response_data)
-        return(item_list)
-
 
     def get_emby_selectable_folders(self):
         url = ('{server}/emby/Library/SelectableMediaFolders?')

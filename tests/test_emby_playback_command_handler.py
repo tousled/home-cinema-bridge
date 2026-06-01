@@ -24,115 +24,111 @@ class EmbyPlaybackCommandHandlerTest(unittest.TestCase):
         )
 
     def test_playstate_command_uses_latest_config(self):
-        sent_keys = []
+        controls = []
         config = {"name": "old"}
         handler = EmbyPlaybackCommandHandler(
             emby_session=object(),
             config_provider=lambda: config,
             playback_intent_dispatcher_factory=lambda: RecordingDispatcher(),
-            send_remote_key=lambda key, current_config: sent_keys.append(
-                (key, current_config["name"])
+            oppo_control_factory=lambda current_config: RecordingOppoControl(
+                current_config, controls
             ),
         )
 
         config = {"name": "new"}
-        handler.handle_playstate({"Command": "Stop"})
+        handler.handle_playback_state({"Command": "Stop"})
 
-        self.assertEqual([("STP", "new")], sent_keys)
+        self.assertEqual([("remote_key", "new", "STP")], controls)
 
     def test_seek_uses_absolute_position_from_emby(self):
-        seeks = []
+        controls = []
         handler = EmbyPlaybackCommandHandler(
             emby_session=object(),
             config_provider=lambda: {"name": "config"},
             playback_intent_dispatcher_factory=lambda: RecordingDispatcher(),
-            set_play_time=lambda current_config, position_ticks: seeks.append(
-                (current_config["name"], position_ticks)
+            oppo_control_factory=lambda current_config: RecordingOppoControl(
+                current_config, controls
             ),
         )
 
-        handler.handle_playstate(
+        handler.handle_playback_state(
             {
                 "Command": "Seek",
                 "SeekPositionTicks": 120_000_000,
             }
         )
 
-        self.assertEqual([("config", 120_000_000)], seeks)
+        self.assertEqual([("seek", "config", 120_000_000)], controls)
 
     def test_seek_relative_adds_delta_to_current_oppo_position(self):
-        seeks = []
+        controls = []
         handler = EmbyPlaybackCommandHandler(
             emby_session=object(),
             config_provider=lambda: {"name": "config"},
             playback_intent_dispatcher_factory=lambda: RecordingDispatcher(),
-            get_playing_time=lambda current_config: '{"cur_time":100,"total_time":500}',
-            set_play_time=lambda current_config, position_ticks: seeks.append(
-                (current_config["name"], position_ticks)
+            oppo_control_factory=lambda current_config: RecordingOppoControl(
+                current_config, controls, current_position_ticks=1_000_000_000
             ),
         )
 
-        handler.handle_playstate(
+        handler.handle_playback_state(
             {
                 "Command": "SeekRelative",
                 "SeekPositionTicks": 30_000_000,
             }
         )
 
-        self.assertEqual([("config", 1_030_000_000)], seeks)
+        self.assertEqual([("seek", "config", 1_030_000_000)], controls)
 
     def test_seek_relative_never_seeks_before_start(self):
-        seeks = []
+        controls = []
         handler = EmbyPlaybackCommandHandler(
             emby_session=object(),
             config_provider=lambda: {"name": "config"},
             playback_intent_dispatcher_factory=lambda: RecordingDispatcher(),
-            get_playing_time=lambda current_config: '{"cur_time":10,"total_time":500}',
-            set_play_time=lambda current_config, position_ticks: seeks.append(
-                position_ticks
+            oppo_control_factory=lambda current_config: RecordingOppoControl(
+                current_config, controls, current_position_ticks=100_000_000
             ),
         )
 
-        handler.handle_playstate(
+        handler.handle_playback_state(
             {
                 "Command": "SeekRelative",
                 "SeekPositionTicks": -30_000_0000,
             }
         )
 
-        self.assertEqual([0], seeks)
+        self.assertEqual([("seek", "config", 0)], controls)
 
     def test_fast_forward_defaults_to_ten_second_relative_seek(self):
-        seeks = []
+        controls = []
         handler = EmbyPlaybackCommandHandler(
             emby_session=object(),
             config_provider=lambda: {"name": "config"},
             playback_intent_dispatcher_factory=lambda: RecordingDispatcher(),
-            get_playing_time=lambda current_config: '{"cur_time":100,"total_time":500}',
-            set_play_time=lambda current_config, position_ticks: seeks.append(
-                position_ticks
+            oppo_control_factory=lambda current_config: RecordingOppoControl(
+                current_config, controls, current_position_ticks=1_000_000_000
             ),
         )
 
-        handler.handle_playstate({"Command": "FastForward"})
+        handler.handle_playback_state({"Command": "FastForward"})
 
-        self.assertEqual([1_100_000_000], seeks)
+        self.assertEqual([("seek", "config", 1_100_000_000)], controls)
 
     def test_rewind_defaults_to_ten_second_relative_seek(self):
-        seeks = []
+        controls = []
         handler = EmbyPlaybackCommandHandler(
             emby_session=object(),
             config_provider=lambda: {"name": "config"},
             playback_intent_dispatcher_factory=lambda: RecordingDispatcher(),
-            get_playing_time=lambda current_config: '{"cur_time":100,"total_time":500}',
-            set_play_time=lambda current_config, position_ticks: seeks.append(
-                position_ticks
+            oppo_control_factory=lambda current_config: RecordingOppoControl(
+                current_config, controls, current_position_ticks=1_000_000_000
             ),
         )
 
-        handler.handle_playstate({"Command": "Rewind"})
+        handler.handle_playback_state({"Command": "Rewind"})
 
-        self.assertEqual([900_000_000], seeks)
+        self.assertEqual([("seek", "config", 900_000_000)], controls)
 
 
 class RecordingDispatcher:
@@ -141,6 +137,28 @@ class RecordingDispatcher:
 
     def dispatch_legacy_payload(self, payload, *, origin):
         self.legacy_payloads.append((payload, origin))
+
+
+class RecordingOppoControl:
+    def __init__(self, config, calls, *, current_position_ticks=0):
+        self._config = config
+        self._calls = calls
+        self._current_position_ticks = current_position_ticks
+
+    def send_remote_key(self, key):
+        self._calls.append(("remote_key", self._config["name"], key))
+
+    def select_audio_track(self, audio_index):
+        self._calls.append(("audio", self._config["name"], audio_index))
+
+    def select_subtitle_track(self, subtitle_index):
+        self._calls.append(("subtitle", self._config["name"], subtitle_index))
+
+    def seek_to_position_ticks(self, position_ticks):
+        self._calls.append(("seek", self._config["name"], position_ticks))
+
+    def current_position_ticks(self):
+        return self._current_position_ticks
 
 
 if __name__ == "__main__":

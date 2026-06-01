@@ -5,6 +5,9 @@ import os
 from dataclasses import dataclass
 
 from home_cinema_bridge.media_servers.emby import MediaServerPlaybackContext
+from home_cinema_bridge.media_servers.emby.playback_request import (
+    parse_playback_request_payload,
+)
 from home_cinema_bridge.playback.media_location import resolve_player_media_file_location
 from home_cinema_bridge.playback.startup.models import (
     OppoPlaybackStartRequest,
@@ -33,7 +36,11 @@ def build_legacy_playback_startup_context(
     emby_session,
     playback_payload: dict,
 ) -> LegacyPlaybackStartupContext:
-    params = emby_session.process_data(playback_payload)
+    params = parse_playback_request_payload(
+        playback_payload,
+        config=emby_session.config,
+        load_item_info=emby_session.get_item_info,
+    )
     media_server_playback_context = MediaServerPlaybackContext.from_event(
         playback_payload,
         load_user_item=emby_session.get_item_info,
