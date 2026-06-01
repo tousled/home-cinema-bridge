@@ -22,6 +22,11 @@ from home_cinema_bridge.media_servers.emby.web_config import (
 )
 from home_cinema_bridge.web.path_config import test_path_configuration
 from home_cinema_bridge.web.runtime_config import load_runtime_config
+from home_cinema_bridge.web.static_assets import (
+    load_json_asset,
+    read_binary_asset,
+    read_text_asset,
+)
 from home_cinema_bridge.devices.av.web_control import (
     get_hdmi_list,
     av_check_power,
@@ -176,33 +181,6 @@ def update_version(config, vers_path, cwd):
     return resp
 
 
-def cargar_lang(config_file):
-
-    with open(
-        config_file.encode(sys.getfilesystemencoding()), "r", encoding="utf-8"
-    ) as f:
-        config = json.load(f)
-    f.close()
-    ## new options default config values
-    return config
-
-
-def leer_file(web_file):
-
-    with open(web_file, "r", encoding="utf8") as f:
-        num = f.read()
-    f.close
-    return num
-
-
-def leer_img(web_file):
-
-    with open(web_file, "rb") as f:
-        num = f.read()
-    f.close
-    return num
-
-
 def test_emby(config):
     return test_emby_connection(config)
 
@@ -262,7 +240,7 @@ class MyServer(BaseHTTPRequestHandler):
 
         print(self.path)
         if self.path == "/emby_conf.html":
-            i = leer_file(html_path + "emby_conf.html")
+            i = read_text_asset(html_path + "emby_conf.html")
             self.send_response(200)
             self.send_header("Content-type", "text/html; charset=utf-8")
             self.end_headers()
@@ -272,60 +250,60 @@ class MyServer(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-type", "text/html; charset=utf-8")
             self.end_headers()
-            i = leer_file(html_path + "oppo_conf.html")
+            i = read_text_asset(html_path + "oppo_conf.html")
             self.wfile.write(bytes(i, "utf-8"))
             return 0
         if self.path == "/lib_conf.html":
             self.send_response(200)
             self.send_header("Content-type", "text/html; charset=utf-8")
             self.end_headers()
-            i = leer_file(html_path + "lib_conf.html")
+            i = read_text_asset(html_path + "lib_conf.html")
             self.wfile.write(bytes(i, "utf-8"))
             return 0
         if self.path == "/path_conf.html":
             self.send_response(200)
             self.send_header("Content-type", "text/html; charset=utf-8")
             self.end_headers()
-            i = leer_file(html_path + "path_conf.html")
+            i = read_text_asset(html_path + "path_conf.html")
             self.wfile.write(bytes(i, "utf-8"))
             return 0
         if self.path == "/tv_conf.html":
             self.send_response(200)
             self.send_header("Content-type", "text/html; charset=utf-8")
             self.end_headers()
-            i = leer_file(html_path + "tv_conf.html")
+            i = read_text_asset(html_path + "tv_conf.html")
             self.wfile.write(bytes(i, "utf-8"))
             return 0
         if self.path == "/av_conf.html":
             self.send_response(200)
             self.send_header("Content-type", "text/html; charset=utf-8")
             self.end_headers()
-            i = leer_file(html_path + "av_conf.html")
+            i = read_text_asset(html_path + "av_conf.html")
             self.wfile.write(bytes(i, "utf-8"))
             return 0
         if self.path == "/other_conf.html":
             self.send_response(200)
             self.send_header("Content-type", "text/html; charset=utf-8")
             self.end_headers()
-            i = leer_file(html_path + "other_conf.html")
+            i = read_text_asset(html_path + "other_conf.html")
             self.wfile.write(bytes(i, "utf-8"))
             return 0
         if self.path == "/status.html":
             self.send_response(200)
             self.send_header("Content-type", "text/html; charset=utf-8")
             self.end_headers()
-            i = leer_file(html_path + "status.html")
+            i = read_text_asset(html_path + "status.html")
             self.wfile.write(bytes(i, "utf-8"))
             return 0
         if self.path == "/help.html":
             self.send_response(200)
             self.send_header("Content-type", "text/html; charset=utf-8")
             self.end_headers()
-            i = leer_file(html_path + "help.html")
+            i = read_text_asset(html_path + "help.html")
             self.wfile.write(bytes(i, "utf-8"))
             return 0
         if self.path == "/remote.html":
-            i = leer_file(html_path + "remote.html")
+            i = read_text_asset(html_path + "remote.html")
             self.send_response(200)
             self.send_header("Content-type", "text/html; charset=utf-8")
             self.end_headers()
@@ -335,21 +313,21 @@ class MyServer(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-type", "text/html; charset=utf-8")
             self.end_headers()
-            i = leer_img(resource_path + "android-chrome-36x36.png")
+            i = read_binary_asset(resource_path + "android-chrome-36x36.png")
             self.wfile.write(bytes(i))
             return 0
         if self.path == "/av-receiver-icon-2.jpg":
             self.send_response(200)
             self.send_header("Content-type", "text/html; charset=utf-8")
             self.end_headers()
-            i = leer_img(resource_path + "av-receiver-icon-2.jpg")
+            i = read_binary_asset(resource_path + "av-receiver-icon-2.jpg")
             self.wfile.write(bytes(i))
             return 0
         if self.path == "/dragon.png":
             self.send_response(200)
             self.send_header("Content-type", "text/html; charset=utf-8")
             self.end_headers()
-            i = leer_img(resource_path + "dragon.png")
+            i = read_binary_asset(resource_path + "dragon.png")
             self.wfile.write(bytes(i))
             return 0
         if self.path == "/xnoppo_config":
@@ -398,7 +376,7 @@ class MyServer(BaseHTTPRequestHandler):
             return 0
         if self.path == "/lang":
             config = load_config(config_file, lang_path)
-            a = cargar_lang(lang_path + config["language"] + separador + "lang.js")
+            a = load_json_asset(lang_path + config["language"] + separador + "lang.js")
             self.send_json_response(200, sanitize_config_for_web(a))
             return 0
         if self.path.find("/send_key?") >= 0:
@@ -438,7 +416,7 @@ class MyServer(BaseHTTPRequestHandler):
             self.send_header("Content-type", "text")
             self.end_headers()
             load_config(config_file, lang_path)
-            a = leer_img(cwd + separador + "emby_xnoppo_client_logging.log")
+            a = read_binary_asset(cwd + separador + "emby_xnoppo_client_logging.log")
             self.wfile.write(bytes(a))
             return 0
         else:
@@ -707,7 +685,7 @@ if __name__ == "__main__":
     vers_path = cwd + separador + "versions" + separador
     config = load_config(config_file, lang_path)
     logfile = cwd + separador + "emby_xnoppo_client_logging.log"
-    lang = cargar_lang(lang_path + config["language"] + separador + "lang.js")
+    lang = load_json_asset(lang_path + config["language"] + separador + "lang.js")
 
     if config["DebugLevel"] == 0:
         logging.basicConfig(
