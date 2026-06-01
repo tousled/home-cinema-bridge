@@ -26,26 +26,10 @@ def load_libraries(config):
     try:
         client = _authenticated_client(config)
         views_list = client.get_user_views(client.user_info["User"]["Id"])
-        libraries = []
-
-        for view in views_list:
-            library = {
-                "Name": view["Name"],
-                "Id": view["Id"],
-                "Active": False,
-            }
-            try:
-                lib_list = config["Libraries"]
-            except Exception:
-                lib_list = {}
-
-            for lib in lib_list:
-                if lib["Id"] == view["Id"]:
-                    library["Active"] = lib["Active"]
-
-            libraries.append(library)
-
-        config["Libraries"] = libraries
+        config["Libraries"] = build_library_config(
+            views_list,
+            existing_libraries=config.get("Libraries", []),
+        )
         return 0
     except Exception:
         return 1
@@ -54,12 +38,56 @@ def load_libraries(config):
 def load_selectable_folders(config):
     client = _authenticated_client(config)
     media_folders = client.get_selectable_media_folders()
+    config["servers"] = build_selectable_folder_servers(
+        media_folders,
+        libraries=config.get("Libraries", []),
+        existing_servers=config.get("servers", []),
+        enable_all_libraries=config["enable_all_libraries"],
+    )
+
+
+def load_devices(config):
+    try:
+        client = _authenticated_client(config)
+        devices = client.get_devices()
+        config["devices"] = build_control_device_config(devices.get("Items", []))
+        return "OK"
+    except Exception:
+        return "FAILURE"
+
+
+def build_library_config(views, *, existing_libraries):
+    libraries = []
+
+    for view in views:
+        library = {
+            "Name": view["Name"],
+            "Id": view["Id"],
+            "Active": False,
+        }
+
+        for existing_library in existing_libraries:
+            if existing_library["Id"] == view["Id"]:
+                library["Active"] = existing_library["Active"]
+
+        libraries.append(library)
+
+    return libraries
+
+
+def build_selectable_folder_servers(
+    media_folders,
+    *,
+    libraries,
+    existing_servers,
+    enable_all_libraries,
+):
     servers = []
 
     for folder in media_folders:
         index = 1
-        active = is_library_active(config, folder["Name"])
-        if config["enable_all_libraries"]:
+        active = is_library_active(libraries, folder["Name"])
+        if enable_all_libraries:
             active = True
 
         if active:
@@ -74,46 +102,36 @@ def load_selectable_folders(config):
                     "Emby_Path": subfolder["Path"],
                     "Oppo_Path": "/",
                 }
-                try:
-                    serv_list = config["servers"]
-                except Exception:
-                    serv_list = {}
 
-                for serv in serv_list:
-                    if server["Emby_Path"] == serv["Emby_Path"]:
-                        server["name"] = serv["name"]
-                        server["Oppo_Path"] = serv["Oppo_Path"]
-                        server["Test_OK"] = serv["Test_OK"]
+                for existing_server in existing_servers:
+                    if server["Emby_Path"] == existing_server["Emby_Path"]:
+                        server["name"] = existing_server["name"]
+                        server["Oppo_Path"] = existing_server["Oppo_Path"]
+                        server["Test_OK"] = existing_server["Test_OK"]
 
                 servers.append(server)
                 index = index + 1
 
-    config["servers"] = servers
+    return servers
 
 
-def load_devices(config):
-    try:
-        client = _authenticated_client(config)
-        devices = client.get_devices()
-        dev_temp = []
+def build_control_device_config(devices):
+    control_devices = []
 
-        for device in devices["Items"]:
-            try:
-                if device["ReportedDeviceId"] != "Xnoppo":
-                    device["Name"] = device["Name"] + " / " + device["AppName"]
-                    device["Id"] = device["ReportedDeviceId"]
-                    dev_temp.append(device)
-            except Exception:
-                pass
+    for device in devices:
+        try:
+            if device["ReportedDeviceId"] != "Xnoppo":
+                device["Name"] = device["Name"] + " / " + device["AppName"]
+                device["Id"] = device["ReportedDeviceId"]
+                control_devices.append(device)
+        except Exception:
+            pass
 
-        config["devices"] = dev_temp
-        return "OK"
-    except Exception:
-        return "FAILURE"
+    return control_devices
 
 
-def is_library_active(config, libraryname):
-    for library in config["Libraries"]:
+def is_library_active(libraries, libraryname):
+    for library in libraries:
         if library["Name"] == libraryname:
             return library["Active"]
     return False
