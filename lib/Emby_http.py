@@ -3,9 +3,6 @@ import threading
 import logging
 
 from home_cinema_bridge.media_servers.emby import EmbyClient
-from home_cinema_bridge.media_servers.emby.playback_request import (
-    parse_playback_request_payload,
-)
 
 
 class EmbyHttp(threading.Thread):
@@ -27,41 +24,6 @@ class EmbyHttp(threading.Thread):
 
     def authenticate(self):
         return self.client.authenticate()
-
-    def process_data(self, data):
-        return parse_playback_request_payload(
-            data,
-            config=self.config,
-            load_item_info=self.get_item_info,
-        )
-
-    def playnow(self,data):
-
-        params = self.process_data(data)
-        session_info = self.user_info["SessionInfo"]
-        message_data = {
-                      "CanSeek": True,
-                      "ItemId": params["item_id"],
-                      "SessionId": session_info["Id"],
-                      "MediaSourceId": params["media_source_id"],
-                      "AudioStreamIndex": params["audio_stream_index"],
-                      "SubtitleStreamIndex": params["subtitle_stream_index"],
-                      "IsPaused": False,
-                      "IsMuted": False,
-                      "PositionTicks": params["auto_resume"],
-                      "PlayMethod": "DirectPlay",
-                      "PlaySessionId": params["play_session_id"],
-                      "RepeatMode": "RepeatNone"
-                        }
-        response = self.client.notify_playback_started(message_data)
-        logging.debug(
-            "Emby playback started response | status=%s | body=%s",
-            response.status_code,
-            response.text,
-        )
-        if self.config["DebugLevel"]>0: print (response.text)
-
-        return response
 
     def playback_stop(self,session_id):
 
