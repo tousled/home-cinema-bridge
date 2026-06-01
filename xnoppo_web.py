@@ -24,6 +24,12 @@ from lib.devices.oppo.mounted_share import (
     parse_mounted_share_response,
 )
 from lib.oppo_autoscript import unmount_oppo_path
+from home_cinema_bridge.media_servers.emby.web_config import (
+    test_emby_connection,
+    load_libraries,
+    load_selectable_folders,
+    load_devices,
+)
 from home_cinema_bridge.devices.av.web_control import (
     get_hdmi_list,
     av_check_power,
@@ -46,7 +52,6 @@ from lib.config_manager import (
 )
 import requests
 from lib.Emby_ws import XnoppoWs
-from lib.Emby_http import EmbyHttp
 
 import shutil
 import threading
@@ -409,28 +414,7 @@ def test_mount_path(config, servidor, carpeta):
 
 
 def test_emby(config):
-    try:
-        emby_config = {
-            "emby_server": config.get("emby_server", ""),
-            "user_name": config.get("user_name", ""),
-            "user_password": config.get("user_password", ""),
-        }
-
-        emby_session = EmbyHttp(emby_config)
-        user_info = emby_session.user_info or {}
-
-        session_id = user_info.get("SessionInfo", {}).get("Id", "")
-        access_token = user_info.get("AccessToken", "")
-        user_id = user_info.get("User", {}).get("Id", "")
-
-        if session_id or (access_token and user_id):
-            return "OK"
-
-        return "FAILED"
-
-    except Exception:
-        logging.exception("Error checking Emby connection")
-        return "FAILED"
+    return test_emby_connection(config)
 
 
 def test_oppo(config):
@@ -442,67 +426,11 @@ def test_oppo(config):
 
 
 def carga_libraries(config):
-    try:
-        EmbySession = EmbyHttp(config)
-        views_list = EmbySession.get_user_views(EmbySession.user_info["User"]["Id"])
-        libraries = []
-        for view in views_list:
-            library = {}
-            library["Name"] = view["Name"]
-            library["Id"] = view["Id"]
-            library["Active"] = False
-            try:
-                lib_list = config["Libraries"]
-            except:
-                lib_list = {}
-            for lib in lib_list:
-                if lib["Id"] == view["Id"]:
-                    library["Active"] = lib["Active"]
-            libraries.append(library)
-        config["Libraries"] = libraries
-        return 0
-    except:
-        return 1
-
-
-def is_library_active(config, libraryname):
-    for library in config["Libraries"]:
-        if library["Name"] == libraryname:
-            return library["Active"]
-    return False
+    return load_libraries(config)
 
 
 def get_selectableFolders(config):
-    EmbySession = EmbyHttp(config)
-    MediaFolders = EmbySession.get_emby_selectable_folders()
-    servers = []
-    for Folder in MediaFolders:
-        index = 1
-        active = is_library_active(config, Folder["Name"])
-        if config["enable_all_libraries"] == True:
-            active = True
-        if active == True:
-            for SubFolder in Folder["SubFolders"]:
-                server = {}
-                server["Id"] = SubFolder["Id"]
-                if index > 1:
-                    server["name"] = Folder["Name"] + "(" + str(index) + ")"
-                else:
-                    server["name"] = Folder["Name"]
-                server["Emby_Path"] = SubFolder["Path"]
-                server["Oppo_Path"] = "/"
-                try:
-                    serv_list = config["servers"]
-                except:
-                    serv_list = {}
-                for serv in serv_list:
-                    if server["Emby_Path"] == serv["Emby_Path"]:
-                        server["name"] = serv["name"]
-                        server["Oppo_Path"] = serv["Oppo_Path"]
-                        server["Test_OK"] = serv["Test_OK"]
-                servers.append(server)
-                index = index + 1
-    config["servers"] = servers
+    load_selectable_folders(config)
 
 
 def get_dir_folders(directory):
@@ -510,23 +438,7 @@ def get_dir_folders(directory):
 
 
 def get_devices(config):
-    try:
-        EmbySession = EmbyHttp(config)
-        devices = EmbySession.get_emby_devices()
-        index = 0
-        dev_temp = []
-        for device in devices["Items"]:
-            try:
-                if device["ReportedDeviceId"] != "Xnoppo":
-                    device["Name"] = device["Name"] + " / " + device["AppName"]
-                    device["Id"] = device["ReportedDeviceId"]
-                    dev_temp.append(device)
-            except:
-                pass
-        config["devices"] = dev_temp
-        return "OK"
-    except:
-        return "FAILURE"
+    return load_devices(config)
 
 
 class MyServer(BaseHTTPRequestHandler):

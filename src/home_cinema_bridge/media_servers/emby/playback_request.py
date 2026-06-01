@@ -57,7 +57,7 @@ def parse_playback_request_payload(
 
     if config.get("DebugLevel", 0) > 0:
         print(
-            "EmbyHttp:playback params | "
+            "Emby playback params | "
             f"item_id={params.get('item_id')} | "
             f"auto_resume={params.get('auto_resume')} | "
             f"media_source_id={params.get('media_source_id')} | "
