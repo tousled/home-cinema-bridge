@@ -960,7 +960,7 @@ if __name__ == "__main__":
             handlers=[rfh, logging.StreamHandler(sys.stdout)],
         )
 
-    logging.getLogger("websockets").setLevel(logging.WARNING)
+    logging.getLogger("websocket").setLevel(logging.WARNING)
     logging.getLogger("urllib3").setLevel(logging.WARNING)
 
     config = load_config(config_file, lang_path)
