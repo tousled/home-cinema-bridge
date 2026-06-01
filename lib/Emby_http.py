@@ -47,9 +47,6 @@ class EmbyHttp(threading.Thread):
         return response
 
 
-    def get_headers(self,user_info=None):
-        return self.client.get_headers(user_info)
-
     def send_message2(self,session_id, sms_txt, timeout=3500):
         logging.info(
             "Sending Emby session message | session_id=%s | timeout_ms=%s | text=%s",
@@ -129,19 +126,6 @@ class EmbyHttp(threading.Thread):
         #print (response_text)
         return response_text
 
-
-    def send_user_message(self,user_id,message,timeout=3500):
-        url = ('{server}/emby/Sessions?ControllableByUserId=' + user_id)
-        response_data = self.get_ulr_data(url, self.config, self.user_info)
-        item_list = json.loads(response_data)
-        logging.debug('Session_Info Response Data: %s',response_data)
-        for item in item_list:
-           item_data = {}
-           item_data["Id"] = item["Id"]
-           self.send_message2(item_data["Id"],message,timeout)
-        return item_data
-
-
     def get_session_user_info(self,user_id,device_id):
             url = ('{server}/emby/Sessions?ControllableByUserId=' + str(user_id) + '&DeviceID=' + str(device_id))
             response_data = self.get_ulr_data(url, self.config, self.user_info)
@@ -166,13 +150,6 @@ class EmbyHttp(threading.Thread):
                logging.info("-----------------------------------------------------------\n")
             return item
 
-
-    def get_item_path(self,user_id,item_id):
-        url2 = ('{server}/emby/Users/' + str(user_id) + '/Items/' + str(item_id))
-        response_data_item = self.get_ulr_data(url2, self.config, self.user_info)
-        item_list_data = json.loads(response_data_item)
-        logging.debug('Item List Data Path %s',item_list_data["Path"])
-        return item_list_data["Path"]
 
     def get_item_info(self,user_id,item_id):
         url2 = ('{server}/emby/Users/' + str(user_id) + '/Items/' + str(item_id))
@@ -202,65 +179,6 @@ class EmbyHttp(threading.Thread):
             if mediasource["Id"]==mediasource_id:
                 return(mediasource)
         return item_list_data
-    
-    def get_item_container(self,user_id,item_id):
-        url2 = ('{server}/emby/Users/' + str(user_id) + '/Items/' + str(item_id))
-        response_data_item = self.get_ulr_data(url2, self.config, self.user_info)
-        item_list_data = json.loads(response_data_item)
-        logging.debug('Item List Data Container %s',item_list_data["Container"])
-        return item_list_data["Container"]
-
-    def get_item_ascenstors(self,item_id):
-        url2 = ('{server}/emby/Items/' + str(item_id) + '/Ancestors')
-        response_data_item = self.get_ulr_data(url2, self.config, self.user_info)
-        item_list_data = json.loads(response_data_item)
-        logging.debug('Item List Data Container %s',item_list_data)
-        return item_list_data
-   
-    def get_user_views(self,user_id):
-        url2 = ('{server}/emby/Users/' + str(user_id) + '/Views?IncludeExternalContent=false')
-        response_data_item = self.get_ulr_data(url2, self.config, self.user_info)
-        item_list_data = json.loads(response_data_item)
-        logging.debug('Item List Data User Views %s',item_list_data)
-        return item_list_data["Items"]
-    
-    def get_view_items(self, view_id):
-        url2 = ('{server}/emby/Items?parentId=' + str(view_id))
-        response_data_item = self.get_ulr_data(url2, self.config, self.user_info)
-        item_list_data = json.loads(response_data_item)
-        return item_list_data["Items"]
-
-    def get_view_items2(self,user_id,view_id,item_id):
-        url2 = ('{server}/emby/Users/' + str(user_id) + '/Items?parentId=' + str(view_id) + '&item_id=' + str(item_id))
-        response_data_item = self.get_ulr_data(url2, self.config, self.user_info)
-        item_list_data = json.loads(response_data_item)
-        return item_list_data["Items"]
-
-    def get_info_from_device(self,device_id):
-        url = ('{server}/emby/Sessions?DeviceId=' + device_id)
-        response_data = self.get_ulr_data(url, self.config, self.user_info)
-        item_list = json.loads(response_data)
-        if self.config["DebugLevel"]>2:
-            logging.debug('Response Data: %s',response_data)
-        for item in item_list:
-            item_data = {}
-            item_data["Id"] = item["Id"]
-            item_data["Client"] = item["Client"]
-            item_data["DeviceName"] = item["DeviceName"]
-            print (item_data["Id"])
-            logging.info ("Session ID             : %s " % item_data["Id"])
-            logging.info ("Client                 : %s " % item_data["Client"])
-            logging.info ("DeviceName             : %s " % item_data["DeviceName"])
-            logging.info ("-----------------------------------------------------------")
-        return item
-
-    def is_item_in_library(self,view_id,item_id):
-        resultado=False
-        item_list = self.get_view_items(view_id)
-        for item in item_list:
-            if item["Id"]==item_id:
-                return True
-        return resultado
 
     def is_item_in_library2(self, view_id, item_path):
         resultado=False
@@ -272,13 +190,6 @@ class EmbyHttp(threading.Thread):
                     if resultado:
                         return resultado
         return resultado
-
-    def get_emby_devices(self):
-        url = ('{server}/emby/Devices?')
-        response_data = self.get_ulr_data(url, self.config, self.user_info)
-        item_list = json.loads(response_data)
-        return(item_list)
-
 
     def get_emby_selectable_folders(self):
         url = ('{server}/emby/Library/SelectableMediaFolders?')

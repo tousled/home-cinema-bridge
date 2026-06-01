@@ -385,19 +385,6 @@ class MyServer(BaseHTTPRequestHandler):
             separador = "\\"
         else:
             separador = "/"
-        resource_path = cwd + separador + "web" + separador + "resources" + separador
-        html_path = cwd + separador + "web" + separador
-        tv_path = (
-            cwd
-            + separador
-            + "web"
-            + separador
-            + "libraries"
-            + separador
-            + "TV"
-            + separador
-        )
-        lib_path = cwd + separador + "lib" + separador
         lang_path = cwd + separador + "web" + separador + "lang" + separador
 
         print(self.path)
@@ -622,9 +609,6 @@ if __name__ == "__main__":
     else:
         separador = "/"
     config_file = str(ensure_config_exists())
-    resource_path = cwd + separador + "web" + separador + "resources" + separador
-    html_path = cwd + separador + "web" + separador
-    lib_path = cwd + separador + "lib" + separador
     lang_path = cwd + separador + "web" + separador + "lang" + separador
     config = load_config(config_file, lang_path)
     logfile = cwd + separador + "emby_xnoppo_client_logging.log"
@@ -686,9 +670,6 @@ if __name__ == "__main__":
         print(
             "Config is not complete yet. Web UI is available; Emby websocket will not start."
         )
-
-    espera = 0
-    estado_anterior = ""
 
     logging.debug("Arrancamos el Servidor Web\n")
     serverPort = 8090
