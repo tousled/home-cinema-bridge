@@ -163,6 +163,33 @@
 "status_refresh_time": "Information refresh time (in seconds). 0 disables the refresh",
 "status_check_beta": "Check to check BETA versions",
 "status_new_version": "There is a new version available!",
+    "status_version_title"
+:
+    "Application version",
+        "status_current_version"
+:
+    "Installed version",
+        "status_latest_version"
+:
+    "Latest available version",
+        "status_version_up_to_date"
+:
+    "The application is up to date",
+        "status_version_available"
+:
+    "A new version is available",
+        "status_version_check_error"
+:
+    "Version check failed.",
+        "status_automatic_update_disabled"
+:
+    "Automatic update is not available yet. Version checking is informational only.",
+        "status_check_version_button"
+:
+    "Check version",
+        "status_release_button"
+:
+    "View release",
 "status_restart_button": "Restart Xnoppo",
 "status_update_button": "Update Xnoppo",
 "help_conf_title": "Help about Xnoppo",

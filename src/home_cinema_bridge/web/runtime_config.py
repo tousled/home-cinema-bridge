@@ -30,6 +30,10 @@ def apply_runtime_defaults(config, *, version, lang_path):
     config["wait_nfs"] = config.get("wait_nfs", False)
     config["refresh_time"] = config.get("refresh_time", 5)
     config["check_beta"] = config.get("check_beta", False)
+    config["release_repository"] = config.get(
+        "release_repository", "tousled/home-cinema-bridge"
+    )
+    config["version_check_timeout"] = config.get("version_check_timeout", 10)
     config["smbtrick"] = config.get("smbtrick", False)
     config["BRDisc"] = config.get("BRDisc", False)
 

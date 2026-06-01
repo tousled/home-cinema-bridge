@@ -21,6 +21,10 @@ app.controller('xnoppo_config', function($scope, $http)
   $scope.ready=false;
   $scope.hide_spin = true;
   $scope.error = true;
+	$scope.version_checking = false;
+	$scope.version_update_available = false;
+	$scope.version_check_error = false;
+	$scope.automatic_update_supported = false;
   $http.get("get_state").then(function(response) {
     console.log(response.data);
 	$scope.status = response.data;
@@ -205,6 +209,7 @@ app.controller('xnoppo_config', function($scope, $http)
 			$scope.hide_spin = false;
 			$http({method : "GET",url : "update_version"}).then(function mySuccess(response) {
 			$scope.response = response.data;
+				$scope.version_update_message = response.data.message;
 			$scope.hide_spin =true;
 			}, function myError(response) {
 			$scope.response = response.statusText;
@@ -219,18 +224,35 @@ app.controller('xnoppo_config', function($scope, $http)
 			$scope.response = response.statusText;
 		  })};
 	$scope.check_version = function () {
+		$scope.version_checking = true;
+		$scope.version_check_error = false;
 			$http({method : "GET",url : "check_version"}).then(function mySuccess(response) {
 			console.log(response.data);
+				$scope.version_info = response.data;
+				$scope.current_version = response.data.current_version || $scope.status.Version;
+				$scope.latest_version = response.data.version || $scope.current_version;
+				$scope.latest_tag = response.data.latest_tag;
+				$scope.release_url = response.data.release_url;
+				$scope.version_error = response.data.error;
 			if (response.data.new_version==true) {
 				$scope.error=false;
 				$scope.new_version = response.data.version;
+				$scope.version_update_available = true;
 				}
 			else
 			{
 				$scope.error=true;
+				$scope.version_update_available = false;
 				}
+				if (response.data.error) {
+					$scope.version_check_error = true;
+				}
+				$scope.version_checking = false;
 			}, function myError(response) {
 			$scope.response = response.statusText;
+				$scope.version_checking = false;
+				$scope.version_check_error = true;
+				$scope.version_error = response.statusText;
 		  })};
 	$scope.reload = function()
 		{	   
@@ -342,6 +364,30 @@ function w3_close() {
 						</div>
 						</br>
 						</form>
+							<div class="w3-panel w3-border w3-round">
+								<h5><b>{{lang.status_version_title}}</b></h5>
+								<p><b>{{lang.status_current_version}}:</b> {{current_version || status.Version}}</p>
+								<p><b>{{lang.status_latest_version}}:</b> {{latest_version || "-"}}</p>
+								<p class="w3-text-green"
+								   ng-hide="version_checking || version_check_error || version_update_available">
+									<i class="fa fa-check-circle"></i> {{lang.status_version_up_to_date}}
+								</p>
+								<p class="w3-text-orange"
+								   ng-hide="version_checking || version_check_error || !version_update_available">
+									<i class="fa fa-exclamation-circle"></i> {{lang.status_version_available}}
+								</p>
+								<p class="w3-text-red" ng-hide="!version_check_error">
+									<i class="fa fa-exclamation-triangle"></i> {{lang.status_version_check_error}}
+									{{version_error}}
+								</p>
+								<p class="w3-text-grey">{{lang.status_automatic_update_disabled}}</p>
+								<a class="w3-btn w3-small w3-teal" href="{{release_url}}" ng-hide="!release_url"
+								   target="_blank">{{lang.status_release_button}}</a>
+								<button class="w3-btn w3-small w3-teal" ng-click="check_version()">
+									<i class="fa fa-spinner w3-spin" ng-hide="!version_checking"></i>
+									{{lang.status_check_version_button}}
+								</button>
+							</div>
 						<div >
 						</br>
 						<a href="log.txt" download class="w3-btn w3-teal">Download Log</a>
@@ -351,7 +397,9 @@ function w3_close() {
 							 <div class="w3-bar w3-right-align">
 							 <br>
 								<button ng-click="restart()" class="w3-btn w3-teal"><i class="fa fa-spinner w3-spin" style="font-size:20px" ng-hide=hide_spin></i> {{lang.status_restart_button}}</button>
-								<button ng-click="update_version()" class="w3-btn  w3-teal" ng-disabled="error">{{lang.status_update_button}}</button>
+								 <button class="w3-btn  w3-teal" ng-click="update_version()"
+								         ng-disabled="!automatic_update_supported">{{lang.status_update_button}}
+								 </button>
 							<br>
 							</div>
 						<footer class="w3-container w3-teal w3-center w3-margin-top">

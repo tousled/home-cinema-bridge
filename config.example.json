@@ -42,6 +42,8 @@
     "wait_nfs": true,
     "refresh_time": 2,
     "check_beta": false,
+  "release_repository": "tousled/home-cinema-bridge",
+  "version_check_timeout": 10,
     "smbtrick": false,
     "BRDisc": false,
     "langs": [

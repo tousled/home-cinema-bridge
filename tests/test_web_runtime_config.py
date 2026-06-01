@@ -64,6 +64,8 @@ class WebRuntimeConfigTest(unittest.TestCase):
         self.assertFalse(config["wait_nfs"])
         self.assertEqual(5, config["refresh_time"])
         self.assertFalse(config["check_beta"])
+        self.assertEqual("tousled/home-cinema-bridge", config["release_repository"])
+        self.assertEqual(10, config["version_check_timeout"])
         self.assertFalse(config["smbtrick"])
         self.assertFalse(config["BRDisc"])
         self.assertTrue(config["TV"])

@@ -27,6 +27,10 @@ from home_cinema_bridge.web.static_assets import (
     read_binary_asset,
     read_text_asset,
 )
+from home_cinema_bridge.web.version_update import (
+    check_application_version,
+    trigger_configured_update,
+)
 from home_cinema_bridge.devices.av.web_control import (
     get_hdmi_list,
     av_check_power,
@@ -46,10 +50,8 @@ from lib.config_manager import (
     sanitize_config_for_web,
     merge_existing_secrets,
 )
-import requests
 from lib.Emby_ws import XnoppoWs
 
-import shutil
 import threading
 import logging
 import logging.handlers
@@ -119,66 +121,11 @@ def load_config(config_file, lang_path):
 
 
 def check_version(config):
-
-    url = (
-        "https://raw.githubusercontent.com/siberian-git/Xnoppo/main/versions/version.js"
-    )
-    headers = {}
-    response = requests.get(url, headers=headers)
-    version = json.loads(response.text)
-    print(version)
-    print(config["check_beta"])
-    if config["check_beta"] == True:
-        last_version = version["beta_version"]
-        last_version_file = version["beta_version_file"]
-    else:
-        last_version = version["curr_version"]
-        last_version_file = version["curr_version_file"]
-    xno_version = get_version()
-    resp = {}
-    resp["version"] = last_version
-    resp["file"] = last_version_file
-    print(xno_version)
-    print(last_version)
-    if xno_version < last_version:
-        resp["new_version"] = True
-    else:
-        resp["new_version"] = False
-    print(resp)
-    return resp
+    return check_application_version(config, get_version()).as_legacy_response()
 
 
-def update_version(config, vers_path, cwd):
-
-    url = (
-        "https://raw.githubusercontent.com/siberian-git/Xnoppo/main/versions/version.js"
-    )
-    headers = {}
-    response = requests.get(url, headers=headers)
-    version = json.loads(response.text)
-    print(version)
-    if config["check_beta"] == True:
-        last_version = version["beta_version"]
-        last_version_file = version["beta_version_file"]
-    else:
-        last_version = version["curr_version"]
-        last_version_file = version["curr_version_file"]
-    url2 = (
-        "https://github.com/siberian-git/Xnoppo/raw/main/versions/" + last_version_file
-    )
-    headers = {}
-    response2 = requests.get(url2, headers=headers)
-    filename = vers_path + last_version_file
-    with open(filename, "wb") as f:
-        f.write(response2.content)
-        f.close()
-    shutil.unpack_archive(filename, cwd)
-
-    resp = {}
-    resp["version"] = last_version
-    resp["file"] = last_version_file
-    resp["new_version"] = False
-    return resp
+def update_version(config):
+    return trigger_configured_update(config, get_version())
 
 
 def test_emby(config):
@@ -236,7 +183,6 @@ class MyServer(BaseHTTPRequestHandler):
         resource_path = cwd + separador + "web" + separador + "resources" + separador
         html_path = cwd + separador + "web" + separador
         lang_path = cwd + separador + "web" + separador + "lang" + separador
-        vers_path = cwd + separador + "versions" + separador
 
         print(self.path)
         if self.path == "/emby_conf.html":
@@ -351,8 +297,7 @@ class MyServer(BaseHTTPRequestHandler):
             return 0
         if self.path == "/update_version":
             config = load_config(config_file, lang_path)
-            a = update_version(config, vers_path, cwd)
-            restart()
+            a = update_version(config)
             self.send_json_response(200, sanitize_config_for_web(a))
             return 0
         if self.path == "/get_state":
@@ -454,7 +399,6 @@ class MyServer(BaseHTTPRequestHandler):
         )
         lib_path = cwd + separador + "lib" + separador
         lang_path = cwd + separador + "web" + separador + "lang" + separador
-        vers_path = cwd + separador + "versions" + separador
 
         print(self.path)
         if self.path == "/save_config":
@@ -682,7 +626,6 @@ if __name__ == "__main__":
     html_path = cwd + separador + "web" + separador
     lib_path = cwd + separador + "lib" + separador
     lang_path = cwd + separador + "web" + separador + "lang" + separador
-    vers_path = cwd + separador + "versions" + separador
     config = load_config(config_file, lang_path)
     logfile = cwd + separador + "emby_xnoppo_client_logging.log"
     lang = load_json_asset(lang_path + config["language"] + separador + "lang.js")
