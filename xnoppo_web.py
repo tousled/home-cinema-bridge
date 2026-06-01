@@ -14,22 +14,15 @@ from home_cinema_bridge.devices.oppo.web_control import (
     OppoSignin,
     getglobalinfo,
     sendremotekey,
-    LoginNFS,
-    LoginSambaWithOutID,
-    mountSharedNFSFolder,
-    mountSharedFolder,
     navigate_folder,
 )
-from lib.devices.oppo.mounted_share import (
-    parse_mounted_share_response,
-)
-from lib.oppo_autoscript import unmount_oppo_path
 from home_cinema_bridge.media_servers.emby.web_config import (
     test_emby_connection,
     load_libraries,
     load_selectable_folders,
     load_devices,
 )
+from home_cinema_bridge.web.path_config import test_path_configuration
 from home_cinema_bridge.devices.av.web_control import (
     get_hdmi_list,
     av_check_power,
@@ -276,141 +269,6 @@ def leer_img(web_file):
         num = f.read()
     f.close
     return num
-
-
-def test_path(config, server):
-    try:
-        test_media_path = _build_test_media_path(server)
-        rutas = get_mount_path(test_media_path, server)
-    except ValueError as exc:
-        logging.warning(
-            "Invalid path test configuration: %s | payload=%s",
-            exc,
-            server,
-        )
-        return str(exc)
-
-    result2 = test_mount_path(config, rutas["Servidor"], rutas["Carpeta"])
-    return result2
-
-
-def _build_test_media_path(server_data):
-    emby_path = _normalize_config_path(server_data.get("Emby_Path", ""))
-
-    if not emby_path:
-        raise ValueError("INVALID PATH CONFIG: Emby_Path is required.")
-
-    return emby_path.rstrip("/") + "/test.mkv"
-
-
-def get_mount_path(movie, server_data):
-    emby_path = _normalize_config_path(server_data.get("Emby_Path", ""))
-    oppo_path = _normalize_config_path(server_data.get("Oppo_Path", ""))
-
-    if not emby_path:
-        raise ValueError("INVALID PATH CONFIG: Emby_Path is required.")
-
-    if not oppo_path or oppo_path == "/":
-        raise ValueError("INVALID PATH CONFIG: Oppo_Path is required.")
-
-    movie = _normalize_config_path(movie)
-    emby_prefix = emby_path.rstrip("/")
-    oppo_prefix = oppo_path.rstrip("/")
-
-    if movie != emby_prefix and not movie.startswith(emby_prefix + "/"):
-        raise ValueError("INVALID PATH CONFIG: Emby_Path does not match the test path.")
-
-    movie = oppo_prefix + movie[len(emby_prefix) :]
-    path_parts = movie.strip("/").split("/")
-
-    if len(path_parts) < 3:
-        raise ValueError(
-            "INVALID PATH CONFIG: Oppo_Path must include server and folder."
-        )
-
-    servidor = path_parts[0]
-    carpeta = "/".join(path_parts[1:-1])
-    fichero = path_parts[-1]
-    resultado = {}
-    resultado["Servidor"] = servidor
-    resultado["Carpeta"] = carpeta
-    resultado["Fichero"] = fichero
-    return resultado
-
-
-def _normalize_config_path(path):
-    return str(path or "").strip().replace("\\\\", "\\").replace("\\", "/")
-
-
-def test_mount_path(config, servidor, carpeta):
-    # print("Conectando con el OPPO")
-    result = check_socket(config)
-    if result == 0:
-        response_data6a = getmainfirmwareversion(config)
-        response_data6c = getdevicelist(config)
-        response_data6b = getsetupmenu(config)
-        response_data6c = OppoSignin(config)
-        response_data6d = getdevicelist(config)
-        response_data6e = getglobalinfo(config)
-        response_data6f = getdevicelist(config)
-        response_data_on = sendremotekey("EJT", config)
-        time.sleep(1)
-        # print("Solicitando montar ruta al OPPO")
-        response_data6b = getsetupmenu(config)
-        while response_data6f.find('devicelist":[]') > 0:
-            time.sleep(1)
-            response_data6f = getdevicelist(config)
-            response_data_on = sendremotekey("QPW", config)
-        device_list = json.loads(response_data6f)
-        if config["DebugLevel"] > 0:
-            print(device_list)
-        nfs = config["default_nfs"]
-        for device in device_list["devicelist"]:
-            if device["name"].upper() == servidor.upper():
-                if device["sub_type"] == "nfs":
-                    nfs = True
-                    break
-                else:
-                    nfs = False
-                    break
-        if nfs:
-            response_login = LoginNFS(config, servidor)
-        else:
-            response_login = LoginSambaWithOutID(config, servidor)
-        if config["Always_ON"] == False:
-            time.sleep(5)
-        response_data6b = getsetupmenu(config)
-        if nfs:
-            response_mount = mountSharedNFSFolder(servidor, carpeta, "", "", config)
-        else:
-            response_mount = mountSharedFolder(servidor, carpeta, "", "", config)
-        response = json.loads(response_mount)
-        # print(response)
-        if config["Autoscript"]:
-            _, mounted_share = parse_mounted_share_response(
-                response_text=response_mount,
-                server=servidor,
-                folder=carpeta,
-                is_nfs=nfs,
-            )
-            if mounted_share:
-                unmount_oppo_path(
-                    host=config["Oppo_IP"],
-                    port=int(config.get("OPPO_Port", 23)),
-                    mount_path=mounted_share.mount_path,
-                    debug=config["DebugLevel"] > 0,
-                    timeout=config["timeout_oppo_mount"],
-                )
-        if response["success"]:
-            a = "OK"
-        else:
-            a = "FAILURE"
-        return a
-    else:
-        print(
-            "No se puede conectar, revisa las configuraciones o que el OPPO este encendido o en reposo"
-        )
-        return "FAILED"
 
 
 def test_emby(config):
@@ -752,7 +610,7 @@ class MyServer(BaseHTTPRequestHandler):
             post_data = self.rfile.read(content_length)  # <--- Gets the data itself
             server = json.loads(post_data.decode("utf-8"))
             config = load_config(config_file, lang_path)
-            a = test_path(config, server)
+            a = test_path_configuration(config, server)
             if a == "OK":
                 self.send_response(200)
                 self.send_header("Content-Length", len(server))
