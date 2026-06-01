@@ -38,7 +38,7 @@ def sendnotifyremote(UDP_IP):
 def check_socket(config, session_id=None):
     activator = OppoControlApiActivator.from_config(config)
     result = activator.ensure_control_api_available(
-        max_attempts=int(config["timeout_oppo_conection"])
+        max_attempts=_web_control_api_attempts(config)
     )
 
     if result.available:
@@ -58,6 +58,11 @@ def check_socket(config, session_id=None):
         result.error,
     )
     return 1
+
+
+def _web_control_api_attempts(config) -> int:
+    configured_attempts = int(config.get("oppo_web_control_api_attempts", 3))
+    return max(1, configured_attempts)
 
 
 def getmainfirmwareversion(config):

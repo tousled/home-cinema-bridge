@@ -38,7 +38,14 @@ class LoggingTcpClient:
             )
             raise
 
-    def check_connection(self, *, host: str, port: int, timeout: float) -> bool:
+    def check_connection(
+        self,
+        *,
+        host: str,
+        port: int,
+        timeout: float,
+        log_failure_stack: bool = True,
+    ) -> bool:
         logger.debug(
             "TCP connect | client=%s | host=%s | port=%s | timeout=%s",
             self._name,
@@ -49,14 +56,25 @@ class LoggingTcpClient:
         try:
             with socket.create_connection((host, port), timeout=timeout):
                 return True
-        except OSError:
-            logger.exception(
-                "TCP connect failed | client=%s | host=%s | port=%s | timeout=%s",
-                self._name,
-                host,
-                port,
-                timeout,
-            )
+        except OSError as exc:
+            if log_failure_stack:
+                logger.exception(
+                    "TCP connect failed | client=%s | host=%s | port=%s | timeout=%s",
+                    self._name,
+                    host,
+                    port,
+                    timeout,
+                )
+            else:
+                logger.debug(
+                    "TCP connect unavailable | client=%s | host=%s | port=%s | timeout=%s | error=%s: %s",
+                    self._name,
+                    host,
+                    port,
+                    timeout,
+                    type(exc).__name__,
+                    exc,
+                )
             raise
 
     @contextmanager

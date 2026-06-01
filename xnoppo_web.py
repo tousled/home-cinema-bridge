@@ -343,7 +343,6 @@ def _normalize_config_path(path):
 
 
 def test_mount_path(config, servidor, carpeta):
-    sendnotifyremote(config["Oppo_IP"])
     # print("Conectando con el OPPO")
     result = check_socket(config)
     if result == 0:
@@ -411,6 +410,7 @@ def test_mount_path(config, servidor, carpeta):
         print(
             "No se puede conectar, revisa las configuraciones o que el OPPO este encendido o en reposo"
         )
+        return "FAILED"
 
 
 def test_emby(config):

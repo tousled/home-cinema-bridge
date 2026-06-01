@@ -1,6 +1,7 @@
 import logging
 import socket
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from home_cinema_bridge.network.tcp import LoggingTcpClient
@@ -36,19 +37,24 @@ class OppoControlApiActivator:
         control_api_port: int = OPPO_CONTROL_API_PORT,
         remote_login_port: int = OPPO_REMOTE_LOGIN_PORT,
         timeout_seconds: float = 1.0,
+        tcp_client=None,
+        sleep: Callable[[float], None] = time.sleep,
+        remote_login_sender: Callable[[], None] | None = None,
     ):
         self.host = host
         self.control_api_port = control_api_port
         self.remote_login_port = remote_login_port
         self.timeout_seconds = timeout_seconds
-        self._tcp = LoggingTcpClient(name="oppo-control-api")
+        self._tcp = tcp_client or LoggingTcpClient(name="oppo-control-api")
+        self._sleep = sleep
+        self._remote_login_sender = remote_login_sender
 
     @classmethod
     def from_config(cls, config: dict) -> "OppoControlApiActivator":
         return cls(
             host=str(config["Oppo_IP"]),
             control_api_port=int(config.get("OPPO_HTTP_Port", OPPO_CONTROL_API_PORT)),
-            timeout_seconds=float(config.get("timeout_oppo_conection", 1.0)),
+            timeout_seconds=float(config.get("oppo_control_api_connect_timeout", 1.0)),
         )
 
     def check_control_api_availability(self) -> OppoControlApiActivationResult:
@@ -57,6 +63,7 @@ class OppoControlApiActivator:
                 host=self.host,
                 port=self.control_api_port,
                 timeout=self.timeout_seconds,
+                log_failure_stack=False,
             )
             return OppoControlApiActivationResult(
                 available=True,
@@ -96,7 +103,7 @@ class OppoControlApiActivator:
                     last_error,
                 )
 
-            time.sleep(1)
+            self._sleep(1)
 
         if self._is_control_api_available():
             return OppoControlApiActivationResult(
@@ -120,6 +127,10 @@ class OppoControlApiActivator:
 
 
     def _send_remote_login_notification(self) -> None:
+        if self._remote_login_sender is not None:
+            self._remote_login_sender()
+            return
+
         logging.debug("Sending OPPO remote login notification to %s:%s", self.host, self.remote_login_port)
 
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
