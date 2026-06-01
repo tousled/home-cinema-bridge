@@ -36,7 +36,7 @@ class EmbyPlaybackCommandHandlerTest(unittest.TestCase):
         )
 
         config = {"name": "new"}
-        handler.handle_playstate({"Command": "Stop"})
+        handler.handle_playback_state({"Command": "Stop"})
 
         self.assertEqual([("remote_key", "new", "STP")], controls)
 
@@ -51,7 +51,7 @@ class EmbyPlaybackCommandHandlerTest(unittest.TestCase):
             ),
         )
 
-        handler.handle_playstate(
+        handler.handle_playback_state(
             {
                 "Command": "Seek",
                 "SeekPositionTicks": 120_000_000,
@@ -71,7 +71,7 @@ class EmbyPlaybackCommandHandlerTest(unittest.TestCase):
             ),
         )
 
-        handler.handle_playstate(
+        handler.handle_playback_state(
             {
                 "Command": "SeekRelative",
                 "SeekPositionTicks": 30_000_000,
@@ -91,7 +91,7 @@ class EmbyPlaybackCommandHandlerTest(unittest.TestCase):
             ),
         )
 
-        handler.handle_playstate(
+        handler.handle_playback_state(
             {
                 "Command": "SeekRelative",
                 "SeekPositionTicks": -30_000_0000,
@@ -111,7 +111,7 @@ class EmbyPlaybackCommandHandlerTest(unittest.TestCase):
             ),
         )
 
-        handler.handle_playstate({"Command": "FastForward"})
+        handler.handle_playback_state({"Command": "FastForward"})
 
         self.assertEqual([("seek", "config", 1_100_000_000)], controls)
 
@@ -126,7 +126,7 @@ class EmbyPlaybackCommandHandlerTest(unittest.TestCase):
             ),
         )
 
-        handler.handle_playstate({"Command": "Rewind"})
+        handler.handle_playback_state({"Command": "Rewind"})
 
         self.assertEqual([("seek", "config", 900_000_000)], controls)
 

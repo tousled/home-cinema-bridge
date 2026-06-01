@@ -32,7 +32,7 @@ def parse_playback_request_payload(
     if len(item_ids) > 0:
         item_ids = item_ids[0]
 
-    if start_index > 0 and start_index < len(item_ids):
+    if 0 < start_index < len(item_ids):
         item_ids = item_ids[start_index:]
 
     controlling_user_id = data.get("ControllingUserId", "")
@@ -43,17 +43,18 @@ def parse_playback_request_payload(
             item_info.get("UserData", {}).get("PlaybackPositionTicks", 0)
         )
 
-    params = {}
-    params["item_id"] = item_ids
-    params["auto_resume"] = start_position_ticks
-    params["media_source_id"] = media_source_id
-    params["subtitle_stream_index"] = subtitle_stream_index
-    params["audio_stream_index"] = audio_stream_index
-    params["ControllingUserId"] = controlling_user_id
-    params["Session_id"] = data.get("SessionID") or data.get("Id")
-    params["play_session_id"] = data.get("PlaySessionId", "")
-    params["DeviceName"] = data.get("DeviceName", "")
-    params["Device_Id"] = data.get("Device_Id", "")
+    params = {
+        "item_id": item_ids,
+        "auto_resume": start_position_ticks,
+        "media_source_id": media_source_id,
+        "subtitle_stream_index": subtitle_stream_index,
+        "audio_stream_index": audio_stream_index,
+        "ControllingUserId": controlling_user_id,
+        "Session_id": data.get("SessionID") or data.get("Id"),
+        "play_session_id": data.get("PlaySessionId", ""),
+        "DeviceName": data.get("DeviceName", ""),
+        "Device_Id": data.get("Device_Id", ""),
+    }
 
     if config.get("DebugLevel", 0) > 0:
         print(

@@ -59,10 +59,10 @@ def load_selectable_folders(config):
     for folder in media_folders:
         index = 1
         active = is_library_active(config, folder["Name"])
-        if config["enable_all_libraries"] == True:
+        if config["enable_all_libraries"]:
             active = True
 
-        if active == True:
+        if active:
             for subfolder in folder["SubFolders"]:
                 server = {
                     "Id": subfolder["Id"],

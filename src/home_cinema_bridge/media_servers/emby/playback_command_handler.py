@@ -86,7 +86,7 @@ class EmbyPlaybackCommandHandler:
             self._oppo_control.select_subtitle_track(subtitle_index)
             self._emby_session.currentdata["SubtitleStreamIndex"] = int(args["Index"])
 
-    def handle_playstate(self, data: dict) -> None:
+    def handle_playback_state(self, data: dict) -> None:
         command = data["Command"]
         if command == "Seek":
             self._seek_to_absolute_position(data)
